@@ -1,0 +1,64 @@
+# =============================================================================
+# Bilibili Video Crawler — default configuration (v0.1)
+# -----------------------------------------------------------------------------
+# Credentials (username / password / SESSDATA) are NEVER stored here.
+# Login only persists the session cookies in `cookies.json` (see auth section).
+# =============================================================================
+
+database:
+  # SQLite file that is the single source of truth for UP / video state.
+  path: bilibili.db
+
+auth:
+  # File where login session cookies are persisted (gitignored).
+  cookie_file: cookies.json
+
+crawler:
+  # Page size for the UP投稿 list API (max 30).
+  page_size: 30
+  # Stop scanning older submissions once this many *consecutive* videos already
+  # exist in the database (incremental scan short-circuit).
+  stop_after_existing: 10
+  # HTTP timeout (seconds) per request.
+  request_timeout: 15
+  # Number of attempts for a failed request before giving up on that item.
+  retries: 3
+  # Backoff base (seconds) between retries: base * 2 ** attempt.
+  retry_backoff: 1.0
+  # Delay (seconds) between individual video-detail requests (be gentle).
+  request_interval: 0.3
+
+filter:
+  # Duration window in seconds (inclusive). A video with an invalid/unknown
+  # duration is treated as "not eligible" and is marked SKIPPED.
+  min_duration: 300      # 5 minutes
+  max_duration: 1800     # 30 minutes
+
+download:
+  # Root directory for downloaded files.
+  # Layout: <save_root>/<UP name or mid>/<title> [BVxxxx].mp4
+  save_root: downloads
+  # Maximum download bandwidth in MB/s (default 40).
+  max_speed_mbps: 40
+  # Concurrent download workers.
+  concurrency: 2
+  # Preferred quality code (see docs). 64 = 720p, 80 = 1080p, 116 = 1080p60.
+  qn: 80
+  # Use DASH (separate audio/video) + ffmpeg merge when ffmpeg is available.
+  # Falls back to a single progressive stream when ffmpeg is missing.
+  prefer_dash: true
+  # Path to ffmpeg binary; if empty, it is looked up on PATH.
+  ffmpeg_path: ""
+  # User-Agent used for media downloads.
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+  # Referer required by Bilibili CDN.
+  referer: "https://www.bilibili.com"
+
+tui:
+  # Refresh interval (seconds) for the live terminal dashboard.
+  refresh_interval: 0.5
+
+logging:
+  level: INFO
+  # Log file (gitignored).
+  file: crawler.log

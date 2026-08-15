@@ -1,0 +1,1 @@
+"""Video filtering (duration window)."""

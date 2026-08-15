@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Runtime artifacts (DO NOT commit real data or credentials)
+bilibili.db
+bilibili.db-journal
+bilibili.db-wal
+bilibili.db-shm
+downloads/
+data/
+*.log
+logs/
+
+# Secrets / session
+cookies.json
+*.cookies.json
+
+# OS
+.DS_Store
+Thumbs.db
