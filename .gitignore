@@ -26,6 +26,14 @@ data/
 *.log
 logs/
 
+# Test sandbox (debug_test branch only; deleted before merge)
+test_bilibili.db
+test_bilibili.db-journal
+test_bilibili.db-wal
+test_bilibili.db-shm
+test_downloads/
+test_config.yaml
+
 # Secrets / session
 cookies.json
 *.cookies.json

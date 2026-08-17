@@ -21,6 +21,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "auth": {"cookie_file": "cookies.json"},
     "crawler": {
         "page_size": 30,
+        # Max pages of the submission list to scan; 0 = unlimited (full scan).
+        "max_pages": 0,
         "stop_after_existing": 10,
         "request_timeout": 15,
         "retries": 3,

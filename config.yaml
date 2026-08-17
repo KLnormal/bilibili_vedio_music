@@ -16,6 +16,9 @@ auth:
 crawler:
   # Page size for the UP投稿 list API (max 30).
   page_size: 30
+  # Max pages of the submission list to scan (0 = unlimited full scan).
+  # Useful for bounded test runs: e.g. 2 pages = 60 newest videos.
+  max_pages: 0
   # Stop scanning older submissions once this many *consecutive* videos already
   # exist in the database (incremental scan short-circuit).
   stop_after_existing: 10

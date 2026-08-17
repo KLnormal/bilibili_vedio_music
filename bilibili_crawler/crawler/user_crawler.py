@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Optional
 
 from ..bilibili.client import BilibiliClient, BilibiliError
 from ..bilibili.user import get_up_profile, iter_submissions
@@ -44,6 +45,7 @@ class UserCrawler:
         state: RuntimeState,
         *,
         page_size: int = 30,
+        max_pages: Optional[int] = None,
         stop_after_existing: int = 10,
         request_interval: float = 0.3,
     ):
@@ -52,6 +54,7 @@ class UserCrawler:
         self.duration_filter = duration_filter
         self.state = state
         self.page_size = page_size
+        self.max_pages = max_pages
         self.stop_after_existing = stop_after_existing
         self.request_interval = request_interval
 
@@ -91,7 +94,7 @@ class UserCrawler:
         consecutive_existing = 0
         try:
             for item in iter_submissions(
-                self.client, mid, page_size=self.page_size
+                self.client, mid, page_size=self.page_size, max_pages=self.max_pages
             ):
                 if self.state.stopped:
                     break

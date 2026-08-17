@@ -72,6 +72,7 @@ class App:
             self.duration_filter,
             self.state,
             page_size=c["page_size"],
+            max_pages=c.get("max_pages", 0) or None,
             stop_after_existing=c["stop_after_existing"],
             request_interval=c["request_interval"],
         )
