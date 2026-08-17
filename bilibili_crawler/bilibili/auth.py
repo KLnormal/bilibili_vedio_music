@@ -43,15 +43,52 @@ class LoginManager:
     @property
     def is_logged_in(self) -> bool:
         """True when the in-memory session carries a usable SESSDATA cookie."""
-        return bool(self.client.session.cookies.get("SESSDATA"))
+        return bool(self._get_cookie("SESSDATA"))
+
+    # -------------------------------------------------------------- cookies --
+    def _get_cookie(self, name: str) -> Optional[str]:
+        """Read a cookie value without raising on duplicate names.
+
+        ``requests`` raises ``CookieConflictError`` when the jar holds the same
+        cookie name on several domains (which Bilibili's QR-login redirect chain
+        does). We pick the copy with the most specific (longest) domain instead.
+        """
+        copies = [
+            c
+            for c in self.client.session.cookies
+            if c.name == name and c.value
+        ]
+        if not copies:
+            return None
+        copies.sort(key=lambda c: len(c.domain or ""), reverse=True)
+        return copies[0].value
+
+    def _normalize_session_cookies(self) -> None:
+        """Dedupe session cookies, keeping one canonical copy per name.
+
+        After the QR-login finalize redirect, SESSDATA / bili_jct / DedeUserID
+        can be planted on several domains. Collapse them onto ``.bilibili.com``
+        so later requests send exactly one value and reads never conflict.
+        """
+        for name in SESSION_COOKIE_KEYS:
+            value = self._get_cookie(name)
+            if not value:
+                continue
+            # ``del jar[name]`` removes *every* copy of that name.
+            try:
+                del self.client.session.cookies[name]
+            except KeyError:
+                pass
+            self.client.session.cookies.set(name, value, domain=".bilibili.com", path="/")
 
     # ---------------------------------------------------------- persistence --
     def save_cookies(self) -> None:
         """Persist session cookies to the cookie file (never to the database)."""
+        self._normalize_session_cookies()
         cookies = {
-            name: self.client.session.cookies.get(name)
+            name: self._get_cookie(name)
             for name in SESSION_COOKIE_KEYS
-            if self.client.session.cookies.get(name)
+            if self._get_cookie(name)
         }
         if not cookies:
             return
@@ -69,11 +106,14 @@ class LoginManager:
         for name, value in cookies.items():
             if value:
                 self.client.session.cookies.set(name, value, domain=".bilibili.com")
-        return bool(self.client.session.cookies.get("SESSDATA"))
+        return bool(self._get_cookie("SESSDATA"))
 
     def clear_cookies(self) -> None:
         for name in SESSION_COOKIE_KEYS:
-            self.client.session.cookies.pop(name, None)
+            try:
+                del self.client.session.cookies[name]
+            except KeyError:
+                pass
         if self.cookie_file.is_file():
             self.cookie_file.unlink(missing_ok=True)
 
