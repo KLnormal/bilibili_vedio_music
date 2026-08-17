@@ -187,17 +187,23 @@ def main() -> int:
     check("T4 all in-window DOWNLOADED", not failed and downloaded == {v.bvid for v in in_window},
           f"downloaded={len(downloaded)} failed={len(failed)}")
 
+    # Re-fetch fresh rows: download_path is written by the download workers
+    # *after* the scan, so the T3-time Video objects are stale.
+    fresh = {v.bvid: app.repo.get_video(v.bvid) for v in in_window}
+
     missing_files = []
     for v in in_window:
-        path = Path(v.download_path) if v.download_path else None
-        if not path or not path.is_file() or f"[BV{v.bvid}]" not in path.name:
+        fv = fresh[v.bvid]
+        path = Path(fv.download_path) if fv and fv.download_path else None
+        if not path or not path.is_file() or not path.name.endswith(f"[{v.bvid}].mp4"):
             missing_files.append(v.bvid)
     check("T4 files exist with [BVxxx] name", not missing_files, f"missing={missing_files}")
 
     # ---- T5 media verification ------------------------------------------------
     bad_media = []
     for v in in_window:
-        path = Path(v.download_path) if v.download_path else None
+        fv = fresh[v.bvid]
+        path = Path(fv.download_path) if fv and fv.download_path else None
         if path is None or not path.is_file():
             bad_media.append((v.bvid, "file missing"))
             continue

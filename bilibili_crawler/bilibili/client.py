@@ -151,20 +151,51 @@ class BilibiliClient:
         wbi: bool = False,
         headers: Optional[Dict[str, str]] = None,
     ) -> Any:
-        if wbi:
-            self._ensure_cookies()
-            params = self._sign_wbi(params or {})
-        resp = self.request("GET", url, params=params, headers=headers)
-        data = resp.json()
-        code = data.get("code", -1)
-        if code != 0:
-            # -352 / -799 / 412 are Bilibili risk-control / rate-limit signals.
-            # A logged-in session is the most reliable mitigation.
-            hint = ""
-            if code in (-352, -799):
-                hint = " (Bilibili risk control; try `login` first)"
-            raise BilibiliApiError(code, data.get("message", "unknown error") + hint)
-        return data.get("data")
+        """GET a JSON API and return its ``data`` payload.
+
+        Transient failures — connection errors, empty/non-JSON bodies (risk
+        control returns an empty 412/200 body), and risk-control codes
+        (-352 / -799) — are retried with backoff; on risk-control the buvid
+        cookies are refreshed before retrying. All failures surface as
+        :class:`BilibiliError` so callers never see raw ``requests`` errors.
+        """
+        last_exc: Optional[Exception] = None
+        attempts = max(1, self.retries)
+        for attempt in range(attempts):
+            try:
+                if wbi:
+                    self._ensure_cookies()
+                    signed = self._sign_wbi(params or {})
+                else:
+                    signed = params
+                resp = self.request("GET", url, params=signed, headers=headers)
+                try:
+                    data = resp.json()
+                except requests.JSONDecodeError as exc:
+                    raise BilibiliError(
+                        f"non-JSON response (HTTP {resp.status_code}) from {url}"
+                    ) from exc
+            except BilibiliError as exc:
+                last_exc = exc
+                time.sleep(self.retry_backoff * (2 ** attempt))
+                continue
+
+            code = data.get("code", -1)
+            if code in (-352, -799) and attempt < attempts - 1:
+                # Risk control / rate limit: refresh device cookies and retry.
+                self._cookies_ready = False
+                self._wbi_keys = None
+                time.sleep(self.retry_backoff * (2 ** (attempt + 1)))
+                continue
+            if code != 0:
+                hint = ""
+                if code in (-352, -799):
+                    hint = " (Bilibili risk control; try `login` first)"
+                raise BilibiliApiError(code, data.get("message", "unknown error") + hint)
+            return data.get("data")
+        raise BilibiliError(
+            f"request failed after {attempts} attempts: {last_exc}"
+        )
 
     # -------------------------------------------------------------- cookies --
     def _ensure_cookies(self) -> None:

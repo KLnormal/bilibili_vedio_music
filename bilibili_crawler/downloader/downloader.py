@@ -107,7 +107,8 @@ class VideoDownloader:
         save_dir = self.save_root / sanitize_filename(up_dir, max_len=60)
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        base = f"{sanitize_filename(detail.title)} [BV{detail.bvid}]"
+        # ``bvid`` already carries the "BV" prefix.
+        base = f"{sanitize_filename(detail.title)} [{detail.bvid}]"
         final_path = save_dir / f"{base}.mp4"
 
         if use_dash and playback.video_streams:
