@@ -215,6 +215,21 @@ class App:
                 results.append((bvid, False, str(exc)))
         return results
 
+    def add_blacklist(self, mid: int, keyword: str) -> bool:
+        ok = self.repo.add_blacklist(mid, keyword)
+        if ok:
+            self.state.log(f"UP {mid} 黑名单添加: {keyword}")
+        return ok
+
+    def remove_blacklist(self, mid: int, keyword: str) -> bool:
+        ok = self.repo.remove_blacklist(mid, keyword)
+        if ok:
+            self.state.log(f"UP {mid} 黑名单移除: {keyword}")
+        return ok
+
+    def list_blacklist(self, mid: int) -> List[str]:
+        return self.repo.list_blacklist(mid)
+
     def set_limit(self, mbps: float) -> float:
         self.limiter.set_rate(mbps_to_bps(mbps))
         self.state.log(f"下载限速已调整为 {mbps} MB/s")

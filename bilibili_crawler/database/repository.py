@@ -299,3 +299,33 @@ class Repository:
                 "SELECT bvid FROM video WHERE mid = ?", (mid,)
             ).fetchall()
         return {r["bvid"] for r in rows}
+
+    # ------------------------------------------------------------- blacklist --
+    def add_blacklist(self, mid: int, keyword: str) -> bool:
+        """Add a keyword to an UP's blacklist. Returns True if inserted."""
+        keyword = keyword.strip()
+        if not keyword:
+            return False
+        with self._lock:
+            cur = self._db.connection.execute(
+                "INSERT OR IGNORE INTO up_blacklist (mid, keyword) VALUES (?, ?)",
+                (mid, keyword),
+            )
+        return cur.rowcount > 0
+
+    def remove_blacklist(self, mid: int, keyword: str) -> bool:
+        """Remove a keyword from an UP's blacklist. Returns True if deleted."""
+        with self._lock:
+            cur = self._db.connection.execute(
+                "DELETE FROM up_blacklist WHERE mid = ? AND keyword = ?",
+                (mid, keyword.strip()),
+            )
+        return cur.rowcount > 0
+
+    def list_blacklist(self, mid: int) -> List[str]:
+        """Return an UP's blacklist keywords in insertion order."""
+        with self._lock:
+            rows = self._db.connection.execute(
+                "SELECT keyword FROM up_blacklist WHERE mid = ? ORDER BY id", (mid,)
+            ).fetchall()
+        return [r["keyword"] for r in rows]

@@ -74,6 +74,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p_dlbv.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video",
                         help="video (mp4) or audio (m4a)")
 
+    p_bl = sub.add_parser("blacklist", help="manage UP title blacklist")
+    bl_sub = p_bl.add_subparsers(dest="bl_action", required=True)
+    bl_add = bl_sub.add_parser("add", help="add a keyword")
+    bl_add.add_argument("mid", type=int)
+    bl_add.add_argument("keyword")
+    bl_rm = bl_sub.add_parser("remove", help="remove a keyword")
+    bl_rm.add_argument("mid", type=int)
+    bl_rm.add_argument("keyword")
+    bl_list = bl_sub.add_parser("list", help="list keywords")
+    bl_list.add_argument("mid", type=int)
+
     p_limit = sub.add_parser("limit", help="show or set download speed limit (MB/s)")
     p_limit.add_argument("mbps", type=float, nargs="?")
 
@@ -206,6 +217,25 @@ def _cmd_download_bv(app: App, bvids: List[str], options: DownloadOptions) -> in
     return 0 if ok == len(results) else 1
 
 
+def _cmd_blacklist(app: App, action: str, mid: int, keyword: Optional[str]) -> int:
+    if action == "add":
+        ok = app.add_blacklist(mid, keyword)
+        print(f"{'added' if ok else 'already exists'}: {keyword} (mid={mid})")
+        return 0
+    if action == "remove":
+        ok = app.remove_blacklist(mid, keyword)
+        print(f"{'removed' if ok else 'not found'}: {keyword} (mid={mid})")
+        return 0
+    if action == "list":
+        keywords = app.list_blacklist(mid)
+        if not keywords:
+            print("(empty)")
+        for kw in keywords:
+            print(kw)
+        return 0
+    return 1
+
+
 def _cmd_limit(app: App, mbps: Optional[float]) -> int:
     if mbps is None:
         print(f"current limit: {app.limiter.rate / (1024 * 1024):.1f} MB/s")
@@ -277,6 +307,8 @@ def main(argv: Optional[list] = None) -> int:
             return _cmd_status(app, args.mid)
         if args.command == "check":
             return _cmd_check(app, args.mid)
+        if args.command == "blacklist":
+            return _cmd_blacklist(app, args.bl_action, args.mid, getattr(args, "keyword", None))
         if args.command == "limit":
             return _cmd_limit(app, args.mbps)
         if args.command == "run":

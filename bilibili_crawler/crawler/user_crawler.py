@@ -7,7 +7,7 @@ Crawling follows the plan:
   consecutive videos that already exist in the database (incremental scan).
 * ``bvid`` is the unique video identity (SQLite PRIMARY KEY / UNIQUE).
 * Discovered videos are enriched with the ``view`` API (duration/description),
-  then filtered by duration: eligible -> PENDING, ineligible -> SKIPPED.
+  then filtered by duration: eligible -> PENDING, ineligible -> FILTERED.
 * A single video/detail failure never crashes the whole UP task.
 """
 from __future__ import annotations
@@ -165,5 +165,6 @@ class UserCrawler:
         if self.duration_filter.is_eligible(video.duration):
             video.download_status = DownloadStatus.PENDING
         else:
-            video.download_status = DownloadStatus.SKIPPED
+            video.download_status = DownloadStatus.FILTERED
+            video.filter_reason = "duration_out_of_range"
         self.repo.insert_video(video)

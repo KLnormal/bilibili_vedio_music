@@ -30,11 +30,22 @@ CREATE TABLE IF NOT EXISTS video (
     download_path   TEXT    NOT NULL DEFAULT '',
     download_time   TEXT,
     download_error  TEXT    NOT NULL DEFAULT '',
+    filter_reason   TEXT    NOT NULL DEFAULT '',
+    FOREIGN KEY (mid) REFERENCES up (mid) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS up_blacklist (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    mid        INTEGER NOT NULL,
+    keyword    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (mid, keyword),
     FOREIGN KEY (mid) REFERENCES up (mid) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_video_mid ON video (mid);
 CREATE INDEX IF NOT EXISTS idx_video_status ON video (download_status);
+CREATE INDEX IF NOT EXISTS idx_blacklist_mid ON up_blacklist (mid);
 """
 
 
@@ -63,6 +74,20 @@ class Database:
 
     def _init_schema(self) -> None:
         self._conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Idempotent schema migrations for databases created by older versions."""
+        cols = [row[1] for row in self._conn.execute("PRAGMA table_info(video)")]
+        if "filter_reason" not in cols:
+            self._conn.execute(
+                "ALTER TABLE video ADD COLUMN filter_reason TEXT NOT NULL DEFAULT ''"
+            )
+        # v0.1 used SKIPPED for "filtered out"; v0.2 renamed it to FILTERED.
+        self._conn.execute(
+            "UPDATE video SET download_status = 'FILTERED' "
+            "WHERE download_status = 'SKIPPED'"
+        )
 
     @property
     def connection(self) -> sqlite3.Connection:

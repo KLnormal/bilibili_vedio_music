@@ -163,11 +163,11 @@ def main() -> int:
                  if v.duration is not None and DUR_MIN <= v.duration <= DUR_MAX]
     out_window = [v for v in videos if v not in in_window]
     bad_pending = [v.bvid for v in in_window if v.download_status is not DownloadStatus.PENDING]
-    bad_skipped = [v.bvid for v in out_window if v.download_status is not DownloadStatus.SKIPPED]
+    bad_filtered = [v.bvid for v in out_window if v.download_status is not DownloadStatus.FILTERED]
     check("T3 filter marks in-window PENDING", not bad_pending,
           f"in_window={len(in_window)} wrong={bad_pending}")
-    check("T3 filter marks others SKIPPED", not bad_skipped,
-          f"out_window={len(out_window)} wrong={bad_skipped}")
+    check("T3 filter marks others FILTERED", not bad_filtered,
+          f"out_window={len(out_window)} wrong={bad_filtered}")
     print(f"    in-window bvids: {[v.bvid for v in in_window]}")
 
     if not in_window:

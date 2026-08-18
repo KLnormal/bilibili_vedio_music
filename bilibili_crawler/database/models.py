@@ -11,17 +11,19 @@ from typing import Optional
 
 
 class DownloadStatus(str, Enum):
-    """Download state machine (see plan section 7).
+    """Download state machine.
 
-    ``SKIPPED`` is not a download state: it marks a video that was discovered
-    but filtered out (e.g. duration out of range) and therefore never queued.
+    ``FILTERED`` is not a download state: it marks a video that was discovered
+    but rejected by the download rules (duration / blacklist) with a
+    ``filter_reason`` explaining why. Removing the rule lets it re-enter the
+    pipeline (v0.2 section 3.6).
     """
 
     PENDING = "PENDING"
     DOWNLOADING = "DOWNLOADING"
     DOWNLOADED = "DOWNLOADED"
     FAILED = "FAILED"
-    SKIPPED = "SKIPPED"
+    FILTERED = "FILTERED"
 
 
 @dataclass
@@ -50,6 +52,7 @@ class Video:
     download_path: str = ""
     download_time: Optional[str] = None
     download_error: str = ""
+    filter_reason: str = ""
 
     def to_row(self) -> dict:
         return {
@@ -65,6 +68,7 @@ class Video:
             "download_path": self.download_path,
             "download_time": self.download_time,
             "download_error": self.download_error,
+            "filter_reason": self.filter_reason,
         }
 
     @classmethod
@@ -82,4 +86,5 @@ class Video:
             download_path=row["download_path"] or "",
             download_time=row["download_time"],
             download_error=row["download_error"] or "",
+            filter_reason=row["filter_reason"] if "filter_reason" in row else "",
         )

@@ -12,6 +12,7 @@ from bilibili_crawler.database.database import Database
 from bilibili_crawler.database.models import DownloadStatus, Up, Video
 from bilibili_crawler.database.repository import Repository
 from bilibili_crawler.downloader.limiter import RateLimiter, mbps_to_bps
+from bilibili_crawler.filter.blacklist_filter import blacklist_hit, blacklist_match
 from bilibili_crawler.filter.duration_filter import DurationFilter
 from bilibili_crawler.options import DownloadOptions, quality_name
 
@@ -100,6 +101,73 @@ class RepositoryTest(unittest.TestCase):
         self.repo.insert_video(Video(bvid="BV1c", mid=1, title="c", download_status=DownloadStatus.DOWNLOADED))
         downloaded = self.repo.list_downloaded(1)
         self.assertEqual({v.bvid for v in downloaded}, {"BV1a", "BV1c"})
+
+
+class BlacklistFilterTest(unittest.TestCase):
+    """v0.2 Phase 3: case-insensitive contiguous-substring matching."""
+
+    def test_match(self):
+        self.assertTrue(blacklist_match("TESTDATAABC", "TEST"))
+        self.assertTrue(blacklist_match("AAA TEST BBB", "TEST"))
+        self.assertTrue(blacklist_match("testdataabc", "TEST"))  # case-insensitive
+
+    def test_no_match(self):
+        self.assertFalse(blacklist_match("TESAAAB", "TEST"))
+        self.assertFalse(blacklist_match("abc", "TEST"))
+
+    def test_blacklist_hit_returns_keyword(self):
+        self.assertEqual(blacklist_hit("TESTDATAABC", ["广告", "TEST"]), "TEST")
+        self.assertIsNone(blacklist_hit("hello", ["广告", "TEST"]))
+
+
+class BlacklistRepositoryTest(unittest.TestCase):
+    """v0.2 Phase 3: up_blacklist CRUD + schema migration."""
+
+    def setUp(self):
+        self._tmp = Path(tempfile.mkdtemp())
+        self.db = Database(self._tmp / "t.db")
+        self.repo = Repository(self.db)
+        self.repo.upsert_up(Up(mid=1, name="A"))
+
+    def tearDown(self):
+        self.db.close()
+
+    def test_crud(self):
+        self.assertTrue(self.repo.add_blacklist(1, "TEST"))
+        self.assertTrue(self.repo.add_blacklist(1, "广告"))
+        self.assertFalse(self.repo.add_blacklist(1, "TEST"))  # duplicate ignored
+        self.assertEqual(self.repo.list_blacklist(1), ["TEST", "广告"])
+        self.assertTrue(self.repo.remove_blacklist(1, "TEST"))
+        self.assertEqual(self.repo.list_blacklist(1), ["广告"])
+
+    def test_migration_skipped_to_filtered_and_filter_reason(self):
+        # Build an old-style schema (no filter_reason, a SKIPPED row), then let
+        # Database's idempotent migration upgrade it.
+        import sqlite3
+
+        path = self._tmp / "old.db"
+        conn = sqlite3.connect(path)
+        conn.executescript(
+            "CREATE TABLE up (mid INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT '', "
+            "face TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', "
+            "first_crawl_time TEXT, last_crawl_time TEXT, enabled INTEGER NOT NULL DEFAULT 1, "
+            "save_path TEXT NOT NULL DEFAULT '');"
+            "CREATE TABLE video (bvid TEXT PRIMARY KEY, mid INTEGER NOT NULL, duration INTEGER, "
+            "title TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', "
+            "pic TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', update_time TEXT, "
+            "download_status TEXT NOT NULL DEFAULT 'PENDING', download_path TEXT NOT NULL DEFAULT '', "
+            "download_time TEXT, download_error TEXT NOT NULL DEFAULT '');"
+            "INSERT INTO video (bvid, mid, title, download_status) VALUES ('BV1a', 1, 'a', 'SKIPPED');"
+        )
+        conn.commit()
+        conn.close()
+
+        db = Database(path)
+        repo = Repository(db)
+        cols = [r[1] for r in db.connection.execute("PRAGMA table_info(video)")]
+        self.assertIn("filter_reason", cols)
+        self.assertEqual(repo.get_video("BV1a").download_status, DownloadStatus.FILTERED)
+        db.close()
 
 
 class DownloadOptionsTest(unittest.TestCase):
