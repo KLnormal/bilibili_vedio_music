@@ -20,7 +20,7 @@ import argparse
 import sys
 import threading
 import time
-from typing import Optional
+from typing import List, Optional
 
 from .. import __version__
 from ..app import App, check_ffmpeg
@@ -53,6 +53,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_retry = sub.add_parser("retry", help="reset FAILED videos to PENDING")
     p_retry.add_argument("--mid", type=int, default=None)
+
+    p_status = sub.add_parser("status", help="show download status (global or per UP)")
+    p_status.add_argument("mid", type=int, nargs="?", default=None)
+
+    p_check = sub.add_parser("check", help="check DB vs local files, recover MISSING -> PENDING")
+    p_check.add_argument("mid", type=int, nargs="?", default=None)
+
+    p_dlbv = sub.add_parser("download-bv", help="download video(s) directly by bvid (bypass UP rules)")
+    p_dlbv.add_argument("bvids", nargs="+", help="one or more BV ids")
 
     p_limit = sub.add_parser("limit", help="show or set download speed limit (MB/s)")
     p_limit.add_argument("mbps", type=float, nargs="?")
@@ -145,6 +154,46 @@ def _cmd_retry(app: App, mid: Optional[int]) -> int:
     return 0
 
 
+def _cmd_status(app: App, mid: Optional[int]) -> int:
+    s = app.status(mid)
+    if mid is not None and "up" in s:
+        up = s["up"]
+        print(f"UP: {up['name']} (mid={mid})")
+        print(f"  last crawl: {up['last_crawl_time'] or '-'}")
+    print(f"total: {s['total']}")
+    for status, count in s["counts"].items():
+        print(f"  {status:<12} {count}")
+    return 0
+
+
+def _cmd_check(app: App, mid: Optional[int]) -> int:
+    result = app.check_files(mid)
+    print(f"checked {result['checked']} DOWNLOADED video(s).")
+    if result["missing"]:
+        print(f"MISSING {len(result['missing'])} -> reset to PENDING:")
+        for bvid in result["missing"]:
+            print(f"  {bvid}")
+    else:
+        print("no missing files.")
+    return 0
+
+
+def _cmd_download_bv(app: App, bvids: List[str]) -> int:
+    if app.has_ffmpeg is False:
+        print("[warn] ffmpeg not found; DASH streams will fall back to progressive.")
+    print(f"Downloading {len(bvids)} video(s) by bvid (bypassing UP rules)...")
+    results = app.download_bv(bvids)
+    ok = 0
+    for bvid, success, msg in results:
+        if success:
+            ok += 1
+            print(f"  OK   {bvid} -> {msg}")
+        else:
+            print(f"  FAIL {bvid} -> {msg}")
+    print(f"done: {ok}/{len(results)} succeeded.")
+    return 0 if ok == len(results) else 1
+
+
 def _cmd_limit(app: App, mbps: Optional[float]) -> int:
     if mbps is None:
         print(f"current limit: {app.limiter.rate / (1024 * 1024):.1f} MB/s")
@@ -201,8 +250,14 @@ def main(argv: Optional[list] = None) -> int:
             return _cmd_scan(app, args.mid)
         if args.command == "download":
             return _cmd_download(app, args.mid)
+        if args.command == "download-bv":
+            return _cmd_download_bv(app, args.bvids)
         if args.command == "retry":
             return _cmd_retry(app, args.mid)
+        if args.command == "status":
+            return _cmd_status(app, args.mid)
+        if args.command == "check":
+            return _cmd_check(app, args.mid)
         if args.command == "limit":
             return _cmd_limit(app, args.mbps)
         if args.command == "run":

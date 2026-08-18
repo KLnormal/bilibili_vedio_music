@@ -13,11 +13,12 @@ from typing import Dict, List, Optional
 
 from .bilibili.auth import LoginManager
 from .bilibili.client import BilibiliClient
+from .bilibili.video import get_video_detail
 from .config.configuration import load_config, resolve_cookie_path, resolve_data_path
 from .crawler.scheduler import Scheduler
 from .crawler.user_crawler import CrawlStats, UserCrawler
 from .database.database import Database
-from .database.models import Up
+from .database.models import DownloadStatus, Up
 from .database.repository import Repository
 from .downloader.downloader import VideoDownloader
 from .downloader.limiter import RateLimiter, mbps_to_bps
@@ -152,6 +153,62 @@ class App:
         n = self.repo.reset_failed(mid)
         self.state.log(f"已重置 {n} 个失败任务为 PENDING")
         return n
+
+    # ------------------------------------------------------- v0.2 commands --
+    def status(self, mid: Optional[int] = None) -> dict:
+        """Return status statistics for one UP or the whole database."""
+        counts = self.repo.count_by_status(mid)
+        result: dict = {
+            "mid": mid,
+            "total": sum(counts.values()),
+            "counts": counts,
+        }
+        if mid is not None:
+            up = self.repo.get_up(mid)
+            if up:
+                result["up"] = {
+                    "name": up.name,
+                    "last_crawl_time": up.last_crawl_time,
+                }
+        return result
+
+    def check_files(self, mid: Optional[int] = None) -> dict:
+        """Check DOWNLOADED videos against the filesystem.
+
+        A video recorded as DOWNLOADED whose file no longer exists is marked
+        MISSING and reset to PENDING so it can be re-downloaded (plan v0.2
+        section 5). The database stays the source of truth; the filesystem is
+        only the existence verifier.
+        """
+        videos = self.repo.list_downloaded(mid)
+        missing: List[str] = []
+        for v in videos:
+            path = Path(v.download_path) if v.download_path else None
+            if path is None or not path.is_file():
+                missing.append(v.bvid)
+                self.repo.update_download_status(v.bvid, DownloadStatus.PENDING)
+        return {"checked": len(videos), "missing": missing}
+
+    def download_bv(self, bvids: List[str]) -> List[tuple]:
+        """Directly download videos by bvid, bypassing all UP rules.
+
+        Explicitly specifying a BV means the user explicitly wants it downloaded
+        (v0.2 section 9): no add, no scan, no UP blacklist, no duration filter.
+        """
+        results: List[tuple] = []
+        for bvid in bvids:
+            try:
+                detail = get_video_detail(self.client, bvid)
+                up = self.repo.get_up(detail.mid) if detail.mid else None
+                if detail.mid:
+                    up_dir = (up.name if up and up.name else str(detail.mid))
+                else:
+                    up_dir = "direct"
+                path = self.downloader.download(detail, up_dir, self.limiter)
+                results.append((bvid, True, str(path)))
+            except Exception as exc:  # noqa: BLE001
+                results.append((bvid, False, str(exc)))
+        return results
 
     def set_limit(self, mbps: float) -> float:
         self.limiter.set_rate(mbps_to_bps(mbps))

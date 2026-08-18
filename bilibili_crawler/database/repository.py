@@ -218,6 +218,17 @@ class Repository:
             rows = self._db.connection.execute(query, params).fetchall()
         return [Video.from_row(dict(r)) for r in rows]
 
+    def list_downloaded(self, mid: Optional[int] = None) -> List[Video]:
+        """Return videos whose status is DOWNLOADED (for file-consistency checks)."""
+        query = "SELECT * FROM video WHERE download_status = 'DOWNLOADED'"
+        params: list = []
+        if mid is not None:
+            query += " AND mid = ?"
+            params.append(mid)
+        with self._lock:
+            rows = self._db.connection.execute(query, params).fetchall()
+        return [Video.from_row(dict(r)) for r in rows]
+
     def list_pending(self, mid: Optional[int] = None, limit: int = 100) -> List[Video]:
         query = "SELECT * FROM video WHERE download_status = 'PENDING'"
         params: list = []
