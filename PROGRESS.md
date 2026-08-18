@@ -54,6 +54,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 - 文件一致性：`scan` 后自动 check，MISSING → PENDING；启动时自动恢复孤儿 `DOWNLOADING`
 - TUI 增强：header 显示当前清晰度（qn → 可读名）
 - 回归测试：BV 直下绕过黑名单、preview 不修改状态、孤儿恢复等（32 个离线单测）
+- e2e 测试案例 `tests/e2e_v020_demo.py`（10/10 通过）：Empty_old_City 1080p+ / 120~300s / Buffer 黑名单 → 17 个下载 + 4 个黑名单 FILTERED
 
 ---
 
