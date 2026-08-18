@@ -12,7 +12,7 @@
 | 版本 | v0.2.0（开发中） |
 | 里程碑 | v0.1.0 十项目标已实现；v0.2.0 按 8 个 Phase 推进中 |
 | 当前分支 | `main` |
-| 测试 | 离线单测 29/29 通过 |
+| 测试 | 离线单测 30/30 通过 |
 | 关键验证 | ✅ 1080P / 4K 下载链路可行（ffprobe 实测） |
 
 ---
@@ -26,7 +26,7 @@
 | Phase 3 | UP 专属标题黑名单（`up_blacklist` 表 + `filter_reason` + SKIPPED→FILTERED） | ✅ 完成 |
 | Phase 4 | 统一规则决策器与解释（`filter/decision.py` + `explain.py`） | ✅ 完成 |
 | Phase 5 | `preview` 预览模式（dry-run） | ✅ 完成 |
-| Phase 6 | `check`/`scan` 文件一致性与孤儿 DOWNLOADING 恢复 | ⬜ 待办 |
+| Phase 6 | `check`/`scan` 文件一致性与孤儿 DOWNLOADING 恢复 | ✅ 完成 |
 | Phase 7 | TUI 增强 | ⬜ 待办 |
 | Phase 8 | 完整回归测试与文档更新 | ⬜ 待办 |
 
@@ -51,6 +51,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 - 统一决策器 `DecisionEngine`（READY/FILTERED/DOWNLOADED/MISSING/FAILED + reason）+ 规则解释 `explain.py`
 - `download` 命令接入决策器：下载前重新评估黑名单/时长，只下载 READY
 - `preview [mid]` 预览模式（dry-run，含 `--explain <bvid>` 单视频规则解释）
+- 文件一致性：`scan` 后自动 check，MISSING → PENDING；启动时自动恢复孤儿 `DOWNLOADING`
 
 ---
 

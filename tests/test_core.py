@@ -104,6 +104,17 @@ class RepositoryTest(unittest.TestCase):
         downloaded = self.repo.list_downloaded(1)
         self.assertEqual({v.bvid for v in downloaded}, {"BV1a", "BV1c"})
 
+    def test_recover_orphan_downloading(self):
+        self.repo.upsert_up(Up(mid=1, name="A"))
+        self.repo.insert_video(Video(bvid="BV1a", mid=1, title="a", download_status=DownloadStatus.DOWNLOADING))
+        self.repo.insert_video(Video(bvid="BV1b", mid=1, title="b", download_status=DownloadStatus.DOWNLOADED))
+        self.repo.insert_video(Video(bvid="BV1c", mid=1, title="c", download_status=DownloadStatus.DOWNLOADING))
+        n = self.repo.recover_orphan_downloading(1)
+        self.assertEqual(n, 2)
+        self.assertEqual(self.repo.get_video("BV1a").download_status, DownloadStatus.PENDING)
+        self.assertEqual(self.repo.get_video("BV1c").download_status, DownloadStatus.PENDING)
+        self.assertEqual(self.repo.get_video("BV1b").download_status, DownloadStatus.DOWNLOADED)  # untouched
+
 
 class DecisionEngineTest(unittest.TestCase):
     """v0.2 Phase 4: unified rule decision + explanation."""

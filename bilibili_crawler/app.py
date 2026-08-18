@@ -105,6 +105,10 @@ class App:
             rescan_interval=3600.0,
         )
 
+        # Recover orphaned DOWNLOADING tasks left behind by a previous crashed
+        # run (no download workers are running at this point).
+        self.repo.recover_orphan_downloading()
+
     def _setup_logging(self) -> None:
         cfg = self.config["logging"]
         level = getattr(logging, cfg.get("level", "INFO").upper(), logging.INFO)
@@ -136,10 +140,16 @@ class App:
         return self.repo.list_ups()
 
     def scan(self, mid: Optional[int] = None) -> CrawlStats:
-        """Scan all enabled UPs (or a single mid). Serialized by ``scan_lock``."""
+        """Scan all enabled UPs (or a single mid). Serialized by ``scan_lock``.
+
+        After crawling, a file-consistency check runs so DOWNLOADED videos whose
+        file is gone are detected (MISSING -> PENDING).
+        """
         with self.scan_lock:
             if mid is not None:
-                return self.crawler.crawl_up(mid)
+                stats = self.crawler.crawl_up(mid)
+                self.check_files(mid)
+                return stats
             stats = CrawlStats()
             for up in self.repo.list_ups(enabled_only=True):
                 if self.state.stopped:
@@ -150,6 +160,7 @@ class App:
                 stats.filtered += s.filtered
                 stats.eligible += s.eligible
                 stats.failed += s.failed
+            self.check_files(None)
             return stats
 
     def reset_failed(self, mid: Optional[int] = None) -> int:

@@ -207,6 +207,22 @@ class Repository:
                 )
         return cur.rowcount
 
+    def recover_orphan_downloading(self, mid: Optional[int] = None) -> int:
+        """Reset stuck DOWNLOADING videos (e.g. after a crash) back to PENDING."""
+        with self._lock:
+            if mid is None:
+                cur = self._db.connection.execute(
+                    "UPDATE video SET download_status = 'PENDING', download_error = '' "
+                    "WHERE download_status = 'DOWNLOADING'"
+                )
+            else:
+                cur = self._db.connection.execute(
+                    "UPDATE video SET download_status = 'PENDING', download_error = '' "
+                    "WHERE download_status = 'DOWNLOADING' AND mid = ?",
+                    (mid,),
+                )
+        return cur.rowcount
+
     def set_filtered(self, bvid: str, reason: str) -> None:
         """Mark a video FILTERED with an explainable ``filter_reason``."""
         with self._lock:
