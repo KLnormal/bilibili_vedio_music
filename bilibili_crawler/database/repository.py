@@ -230,6 +230,34 @@ class Repository:
             rows = self._db.connection.execute(query, params).fetchall()
         return [Video.from_row(dict(r)) for r in rows]
 
+    def claim_next_pending(self, mid: Optional[int] = None) -> Optional[Video]:
+        """Atomically claim one PENDING video (flip it to DOWNLOADING).
+
+        The SELECT-then-UPDATE runs inside the repository lock and the UPDATE
+        is guarded by ``download_status = 'PENDING'``, so two concurrent
+        workers can never claim the same row. Returns the claimed video, or
+        ``None`` when no PENDING video remains.
+        """
+        with self._lock:
+            query = "SELECT * FROM video WHERE download_status = 'PENDING'"
+            params: list = []
+            if mid is not None:
+                query += " AND mid = ?"
+                params.append(mid)
+            query += " ORDER BY update_time LIMIT 1"
+            row = self._db.connection.execute(query, params).fetchone()
+            if row is None:
+                return None
+            bvid = row["bvid"]
+            cur = self._db.connection.execute(
+                "UPDATE video SET download_status = 'DOWNLOADING', download_error = '' "
+                "WHERE bvid = ? AND download_status = 'PENDING'",
+                (bvid,),
+            )
+            if cur.rowcount != 1:
+                return None
+            return Video.from_row(dict(row))
+
     def count_videos(self, mid: Optional[int] = None) -> int:
         query = "SELECT COUNT(*) AS c FROM video"
         params: list = []

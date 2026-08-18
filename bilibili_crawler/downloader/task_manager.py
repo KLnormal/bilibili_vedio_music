@@ -35,8 +35,13 @@ class DownloadTaskManager:
         self.concurrency = max(1, concurrency)
         self._workers: List[threading.Thread] = []
         self._stop_event = threading.Event()
+        self._mid: Optional[int] = None
 
     # -------------------------------------------------------------- control --
+    def set_mid(self, mid: Optional[int]) -> None:
+        """Restrict downloads to a single UP (None = all UPs)."""
+        self._mid = mid
+
     def start(self) -> None:
         self._stop_event.clear()
         for _ in range(self.concurrency):
@@ -67,19 +72,19 @@ class DownloadTaskManager:
     # ---------------------------------------------------------------- worker --
     def _worker_loop(self) -> None:
         while self._should_continue():
-            # Claim one PENDING video at a time (small batch per worker).
-            videos = self.repo.list_pending(limit=1)
-            if not videos:
+            # Atomically claim one PENDING video (flips it to DOWNLOADING).
+            video = self.repo.claim_next_pending(self._mid)
+            if video is None:
                 time.sleep(1.0)
                 continue
-            self._process(videos[0])
+            self._process(video)
 
     def _process(self, video) -> None:
         bvid = video.bvid
         up = self.repo.get_up(video.mid)
         up_dir = up.name if (up and up.name) else str(video.mid)
 
-        self.repo.update_download_status(bvid, DownloadStatus.DOWNLOADING)
+        # ``claim_next_pending`` already marked this video DOWNLOADING.
         self.state.set_progress(
             bvid=bvid, title=video.title, downloaded=0, total=-1, speed="", status="starting"
         )

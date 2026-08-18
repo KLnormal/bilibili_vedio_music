@@ -113,6 +113,8 @@ def _download_once(app: App, mid: Optional[int]) -> None:
     pending = app.repo.list_pending(mid=mid, limit=1000)
     print(f"{len(pending)} PENDING video(s) to download.")
     app.state.set_pending_count(len(pending))
+    # Restrict the workers to the requested UP (if any).
+    app.download_manager.set_mid(mid)
     app.download_manager.start()
     try:
         # Wait until BOTH pending and in-flight (DOWNLOADING) tasks are done.
