@@ -4,10 +4,12 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
 from bilibili_crawler.app import App
+from bilibili_crawler.bilibili.video import VideoDetail
 from bilibili_crawler.database.database import Database
 from bilibili_crawler.database.models import DownloadStatus, Up, Video
 from bilibili_crawler.database.repository import Repository
@@ -286,6 +288,28 @@ class CheckFilesTest(unittest.TestCase):
         self.assertEqual(result["missing"], ["BV1miss"])
         self.assertEqual(self.app.repo.get_video("BV1ok").download_status, DownloadStatus.DOWNLOADED)
         self.assertEqual(self.app.repo.get_video("BV1miss").download_status, DownloadStatus.PENDING)
+
+    def test_preview_does_not_modify_state(self):
+        self.app.repo.upsert_up(Up(mid=1, name="A"))
+        self.app.repo.insert_video(Video(bvid="BV1a", mid=1, duration=600, title="t",
+                                         download_status=DownloadStatus.PENDING))
+        before = self.app.repo.get_video("BV1a").download_status
+        result = self.app.preview(1, DownloadOptions())
+        after = self.app.repo.get_video("BV1a").download_status
+        self.assertEqual(before, after)  # dry-run must not change state
+        self.assertEqual(result["stats"].get("READY"), 1)
+
+    def test_download_bv_bypasses_blacklist(self):
+        # A BV whose title hits the UP blacklist must still download when
+        # explicitly requested via download-bv.
+        self.app.repo.upsert_up(Up(mid=1, name="A"))
+        self.app.repo.add_blacklist(1, "TEST")
+        detail = VideoDetail(bvid="BV1a", title="TESTDATAABC", duration=600, cid=1, mid=1)
+        with mock.patch("bilibili_crawler.app.get_video_detail", return_value=detail), \
+             mock.patch.object(self.app.downloader, "download", return_value=Path("/tmp/x.mp4")):
+            results = self.app.download_bv(["BV1a"], DownloadOptions())
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0][1])  # success (not filtered by blacklist)
 
 
 if __name__ == "__main__":

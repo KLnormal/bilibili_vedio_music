@@ -30,6 +30,7 @@ from rich.text import Text
 
 from .. import __version__
 from ..app import App
+from ..options import quality_name
 from .keyreader import KeyReader
 
 HELP_TEXT = " q Quit    p Pause    r Scan now    l Limit"
@@ -138,9 +139,10 @@ def _header(app: App, snapshot) -> Text:
     login = "logged-in" if app.login.is_logged_in else "anonymous"
     dash = "dash+ffmpeg" if app.has_ffmpeg else "progressive"
     paused = " [PAUSED]" if snapshot.paused else ""
+    quality = quality_name(app.downloader.qn)
     return Text(
         f"BILIBILI CRAWLER  v{__version__}  [{login}]  [{dash}]  "
-        f"limit {snapshot.rate_mbps:.0f} MB/s{paused}",
+        f"quality {quality}  limit {snapshot.rate_mbps:.0f} MB/s{paused}",
         style="bold white on dark_blue",
     )
 
