@@ -18,7 +18,7 @@ from bilibili_crawler.filter.blacklist_filter import blacklist_hit, blacklist_ma
 from bilibili_crawler.filter.decision import DecisionEngine
 from bilibili_crawler.filter.duration_filter import DurationFilter
 from bilibili_crawler.filter.explain import explain
-from bilibili_crawler.options import DownloadOptions, quality_name
+from bilibili_crawler.options import DownloadOptions, parse_date, quality_name
 
 
 class DurationFilterTest(unittest.TestCase):
@@ -155,6 +155,33 @@ class DecisionEngineTest(unittest.TestCase):
         self.assertIn("Decision: FILTERED", text)
         self.assertIn("Reason: blacklist: TEST", text)
 
+    def test_date_filter(self):
+        from datetime import datetime
+
+        engine = DecisionEngine(300, 1800, [], datetime(2025, 10, 1), datetime(2026, 1, 25))
+
+        def make(created):
+            return Video(bvid="BV1a", mid=1, duration=600, title="ok",
+                         created=created, download_status=DownloadStatus.PENDING)
+
+        # 边界包含当天
+        self.assertEqual(engine.decide(make(int(datetime(2025, 10, 1).timestamp()))).decision, "READY")
+        self.assertEqual(engine.decide(make(int(datetime(2026, 1, 25).timestamp()))).decision, "READY")
+        # 范围内
+        self.assertEqual(engine.decide(make(int(datetime(2025, 12, 1).timestamp()))).decision, "READY")
+        # 早于开始
+        d = engine.decide(make(int(datetime(2025, 9, 1).timestamp())))
+        self.assertEqual((d.decision, d.reason), ("FILTERED", "date_out_of_range"))
+        # 晚于结束
+        d = engine.decide(make(int(datetime(2026, 2, 1).timestamp())))
+        self.assertEqual((d.decision, d.reason), ("FILTERED", "date_out_of_range"))
+        # 缺发布时间
+        d = engine.decide(make(None))
+        self.assertEqual((d.decision, d.reason), ("FILTERED", "date_missing"))
+        # 未设置日期规则时不参与过滤
+        plain = DecisionEngine(300, 1800)
+        self.assertEqual(plain.decide(make(None)).decision, "READY")
+
 
 class BlacklistFilterTest(unittest.TestCase):
     """v0.2 Phase 3: case-insensitive contiguous-substring matching."""
@@ -262,6 +289,32 @@ class DownloadOptionsTest(unittest.TestCase):
     def test_validate_duration_order(self):
         with self.assertRaises(ValueError):
             DownloadOptions(min_duration=500, max_duration=300).validate()
+
+    def test_parse_date_unlimited(self):
+        self.assertIsNone(parse_date(None))
+        self.assertIsNone(parse_date("0"))
+        self.assertIsNone(parse_date(""))
+
+    def test_parse_date_valid(self):
+        from datetime import datetime
+
+        self.assertEqual(parse_date("2025.10.01"), datetime(2025, 10, 1))
+
+    def test_parse_date_invalid(self):
+        with self.assertRaises(ValueError):
+            parse_date("2025.13.01")
+        with self.assertRaises(ValueError):
+            parse_date("20251001")
+
+    def test_date_filter_active(self):
+        self.assertFalse(DownloadOptions().date_filter_active)
+        self.assertFalse(DownloadOptions(min_date="0", max_date="0").date_filter_active)
+        self.assertTrue(DownloadOptions(min_date="2025.10.01", max_date="0").date_filter_active)
+        self.assertTrue(DownloadOptions(min_date="0", max_date="2026.01.25").date_filter_active)
+
+    def test_date_order_validation(self):
+        with self.assertRaises(ValueError):
+            DownloadOptions(min_date="2026.01.25", max_date="2025.10.01").validate()
 
 
 class CheckFilesTest(unittest.TestCase):

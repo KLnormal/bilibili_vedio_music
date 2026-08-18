@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS video (
     bvid            TEXT PRIMARY KEY,
     mid             INTEGER NOT NULL,
     duration        INTEGER,
+    created         INTEGER,
     title           TEXT    NOT NULL DEFAULT '',
     description     TEXT    NOT NULL DEFAULT '',
     pic             TEXT    NOT NULL DEFAULT '',
@@ -82,6 +83,10 @@ class Database:
         if "filter_reason" not in cols:
             self._conn.execute(
                 "ALTER TABLE video ADD COLUMN filter_reason TEXT NOT NULL DEFAULT ''"
+            )
+        if "created" not in cols:
+            self._conn.execute(
+                "ALTER TABLE video ADD COLUMN created INTEGER"
             )
         # v0.1 used SKIPPED for "filtered out"; v0.2 renamed it to FILTERED.
         self._conn.execute(

@@ -21,6 +21,7 @@ class VideoDetail:
     description: str = ""
     pic: str = ""
     duration: Optional[int] = None  # seconds
+    pubdate: Optional[int] = None   # 发布时间戳（Unix 秒）
     cid: Optional[int] = None
     mid: int = 0
 
@@ -77,6 +78,7 @@ def get_video_detail(client: BilibiliClient, bvid: str) -> VideoDetail:
         description=data.get("desc", ""),
         pic=data.get("pic", ""),
         duration=duration,
+        pubdate=int(data["pubdate"]) if data.get("pubdate") else None,
         cid=int(cid) if cid is not None else None,
         mid=int(mid) if mid else 0,
     )

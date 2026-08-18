@@ -6,12 +6,13 @@ Produces a single, explainable decision per video:
 
 with a ``reason`` and a per-rule ``checks`` map. The downloader should only
 consume videos decided READY; everything else is explained by the decision
-(AGENT_PROMPT_v0.2 section 6). Rules are evaluated in the order defined in
-section 7: download/file state -> duration -> blacklist.
+(AGENT_PROMPT_v0.2 section 6). Rules are evaluated in the order:
+download/file state -> duration -> date -> blacklist.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
@@ -33,9 +34,13 @@ class DecisionEngine:
         min_duration: int,
         max_duration: int,
         blacklist_keywords: Iterable[str] = (),
+        min_date: Optional[datetime] = None,
+        max_date: Optional[datetime] = None,
     ):
         self._duration = DurationFilter(min_duration, max_duration)
         self._blacklist = list(blacklist_keywords)
+        self._min_date = min_date
+        self._max_date = max_date
 
     def decide(self, video: Video, file_exists: Optional[bool] = None) -> Decision:
         """Evaluate all rules for one video and return a Decision."""
@@ -55,11 +60,22 @@ class DecisionEngine:
         if status is DownloadStatus.DOWNLOADING:
             return Decision("DOWNLOADING", checks=checks)
 
-        # PENDING / FILTERED -> (re-)evaluate duration then blacklist.
+        # PENDING / FILTERED -> (re-)evaluate duration -> date -> blacklist.
         duration_ok = self._duration.is_eligible(video.duration)
         checks["duration"] = duration_ok
         if not duration_ok:
             return Decision("FILTERED", reason="duration_out_of_range", checks=checks)
+
+        if self._min_date is not None or self._max_date is not None:
+            created = video.created
+            checks["date"] = created
+            if created is None:
+                return Decision("FILTERED", reason="date_missing", checks=checks)
+            created_date = datetime.fromtimestamp(created).date()
+            if self._min_date is not None and created_date < self._min_date.date():
+                return Decision("FILTERED", reason="date_out_of_range", checks=checks)
+            if self._max_date is not None and created_date > self._max_date.date():
+                return Decision("FILTERED", reason="date_out_of_range", checks=checks)
 
         hit = blacklist_hit(video.title, self._blacklist)
         checks["blacklist"] = hit

@@ -38,6 +38,7 @@ def build_video(
         bvid=item.bvid,
         mid=mid,
         duration=detail.duration,
+        created=detail.pubdate or item.created or None,
         title=detail.title or item.title,
         description=detail.description,
         pic=detail.pic or item.pic,

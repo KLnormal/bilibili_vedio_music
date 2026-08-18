@@ -43,6 +43,7 @@ class Video:
     bvid: str
     mid: int
     duration: Optional[int] = None
+    created: Optional[int] = None    # 发布时间戳（Unix 秒），日期筛选用
     title: str = ""
     description: str = ""
     pic: str = ""
@@ -59,6 +60,7 @@ class Video:
             "bvid": self.bvid,
             "mid": self.mid,
             "duration": self.duration,
+            "created": self.created,
             "title": self.title,
             "description": self.description,
             "pic": self.pic,
@@ -77,6 +79,7 @@ class Video:
             bvid=row["bvid"],
             mid=row["mid"],
             duration=row["duration"],
+            created=row.get("created"),
             title=row["title"] or "",
             description=row["description"] or "",
             pic=row["pic"] or "",

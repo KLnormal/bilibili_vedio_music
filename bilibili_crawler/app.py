@@ -261,11 +261,16 @@ class App:
             if options.max_duration is not None
             else self.config["filter"]["max_duration"]
         )
+        min_date = options.min_datetime
+        max_date = options.max_datetime
         mids = [mid] if mid is not None else [u.mid for u in self.repo.list_ups(enabled_only=True)]
 
         counts: Dict[str, int] = {"ready": 0, "filtered": 0}
         for m in mids:
-            engine = DecisionEngine(min_d, max_d, self.repo.list_blacklist(m))
+            engine = DecisionEngine(
+                min_d, max_d, self.repo.list_blacklist(m),
+                min_date=min_date, max_date=max_date,
+            )
             for video in self.repo.list_pending(m):
                 decision = engine.decide(video)
                 if decision.decision == "READY":
@@ -291,11 +296,16 @@ class App:
             if options.max_duration is not None
             else self.config["filter"]["max_duration"]
         )
+        min_date = options.min_datetime
+        max_date = options.max_datetime
         mids = [mid] if mid is not None else [u.mid for u in self.repo.list_ups(enabled_only=True)]
 
         decisions: List[tuple] = []
         for m in mids:
-            engine = DecisionEngine(min_d, max_d, self.repo.list_blacklist(m))
+            engine = DecisionEngine(
+                min_d, max_d, self.repo.list_blacklist(m),
+                min_date=min_date, max_date=max_date,
+            )
             for video in self.repo.list_videos(m):
                 decisions.append((video, engine.decide(video)))
 

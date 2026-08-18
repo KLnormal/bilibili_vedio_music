@@ -7,6 +7,7 @@ was downloaded or filtered, so users can answer "why didn't this download?"
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from ..database.models import Video
@@ -38,6 +39,15 @@ def explain(
         lines.append(f"Duration: {dur}s    {'PASS' if ok else 'FAIL'}")
         if min_duration is not None and max_duration is not None:
             lines.append(f"Range: {min_duration}~{max_duration}    {'PASS' if ok else 'FAIL'}")
+
+    if "date" in checks:
+        created = checks["date"]
+        date_fail = decision.reason in ("date_out_of_range", "date_missing")
+        if created is None:
+            lines.append("Created: missing    FAIL")
+        else:
+            created_str = datetime.fromtimestamp(created).strftime("%Y-%m-%d")
+            lines.append(f"Created: {created_str}    {'FAIL' if date_fail else 'PASS'}")
 
     if "blacklist" in checks:
         hit = checks["blacklist"]

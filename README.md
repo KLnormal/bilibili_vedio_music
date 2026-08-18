@@ -309,6 +309,23 @@ CLI 参数 = 本次任务临时覆盖
 
 ---
 
+# 7.1 发布时间筛选（用户新增）
+
+支持按视频发布时间筛选下载（需扫描保存发布时间，`video.created` 字段）。
+
+格式：`20xx.xx.xx`，`0` 表示不限制。
+
+```bash
+python main.py download <mid> --min-date 2025.10.01 --max-date 2026.01.25   # 只下这段时间发布的
+python main.py download <mid> --min-date 0 --max-date 2026.01.25            # 一直到 2026.01.25
+python main.py download <mid> --min-date 2025.10.01 --max-date 0            # 从 2025.10.01 到现在
+python main.py preview <mid> --min-date 2025.01.01 --max-date 2025.12.31    # 预览同样支持
+```
+
+规则顺序：时长 → 日期 → 黑名单。日期边界包含当天；发布时间缺失时标为 `date_missing` 过滤。
+
+---
+
 # 8. UP 专属标题黑名单
 
 ## 8.1 数据归属

@@ -54,11 +54,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_dl = sub.add_parser("download", help="download PENDING videos once")
     p_dl.add_argument("--mid", type=int, default=None)
     p_dl.add_argument("--quality", choices=list(QUALITY_TO_QN.keys()), default=None,
-                      help="720p/1080p/1080p60/4k")
+                      help="720p/1080p/1080p+/1080p60/4k")
     p_dl.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video",
                       help="video (mp4) or audio (m4a)")
     p_dl.add_argument("--min-duration", type=int, default=None, help="seconds, inclusive")
     p_dl.add_argument("--max-duration", type=int, default=None, help="seconds, inclusive")
+    p_dl.add_argument("--min-date", default="0",
+                      help="start publish date 20xx.xx.xx, 0=unlimited")
+    p_dl.add_argument("--max-date", default="0",
+                      help="end publish date 20xx.xx.xx, 0=unlimited")
 
     p_retry = sub.add_parser("retry", help="reset FAILED videos to PENDING")
     p_retry.add_argument("--mid", type=int, default=None)
@@ -75,6 +79,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_preview.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video")
     p_preview.add_argument("--min-duration", type=int, default=None)
     p_preview.add_argument("--max-duration", type=int, default=None)
+    p_preview.add_argument("--min-date", default="0",
+                           help="start publish date 20xx.xx.xx, 0=unlimited")
+    p_preview.add_argument("--max-date", default="0",
+                           help="end publish date 20xx.xx.xx, 0=unlimited")
     p_preview.add_argument("--explain", metavar="BVID", default=None, help="explain a single video")
 
     p_dlbv = sub.add_parser("download-bv", help="download video(s) directly by bvid (bypass UP rules)")
@@ -341,6 +349,8 @@ def main(argv: Optional[list] = None) -> int:
                 media_type=args.media_type,
                 min_duration=args.min_duration,
                 max_duration=args.max_duration,
+                min_date=args.min_date,
+                max_date=args.max_date,
             )
             return _cmd_download(app, args.mid, opts)
         if args.command == "download-bv":
@@ -358,6 +368,8 @@ def main(argv: Optional[list] = None) -> int:
                 media_type=args.media_type,
                 min_duration=args.min_duration,
                 max_duration=args.max_duration,
+                min_date=args.min_date,
+                max_date=args.max_date,
             )
             return _cmd_preview(app, args.mid, opts, args.explain)
         if args.command == "blacklist":
