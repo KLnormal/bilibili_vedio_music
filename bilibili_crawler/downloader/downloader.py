@@ -21,7 +21,7 @@ from typing import Callable, Dict, Optional
 import requests
 
 from ..bilibili.client import BilibiliClient, BilibiliError
-from ..bilibili.video import VideoDetail, get_playback_info, pick_best
+from ..bilibili.video import VideoDetail, get_playback_info, pick_best, pick_best_leq
 from .limiter import RateLimiter
 
 ProgressCallback = Callable[[int, int, str], None]
@@ -122,7 +122,7 @@ class VideoDownloader:
         final_path = save_dir / f"{base}.mp4"
 
         if use_dash and playback.video_streams:
-            self._download_dash(detail, playback, save_dir, base, limiter, progress)
+            self._download_dash(detail, playback, save_dir, base, limiter, progress, effective_qn)
             return final_path
 
         if playback.progressive_streams:
@@ -218,11 +218,14 @@ class VideoDownloader:
         base: str,
         limiter: RateLimiter,
         progress: Optional[ProgressCallback],
+        qn: int,
     ) -> None:
-        video_stream = pick_best(playback.video_streams)
+        # Pick the best video stream *within* the requested tier (Bilibili
+        # returns higher tiers too, but we must not jump above the request).
+        video_stream = pick_best_leq(playback.video_streams, qn)
         audio_stream = pick_best(playback.audio_streams)
         if video_stream is None:
-            raise DownloadError(f"no DASH video stream for {detail.bvid}")
+            raise DownloadError(f"no DASH video stream <= qn {qn} for {detail.bvid}")
 
         video_part = save_dir / f"{base}.video.part"
         audio_part = save_dir / f"{base}.audio.part"

@@ -84,6 +84,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | `dd5c403` | 风控响应未兜底 | `-352/-412` 空响应体未捕获 → 退避重试 + 刷新设备 Cookie |
 | `8869869` | `download` 命令提前退出 | 只看 PENDING 忽略 DOWNLOADING → 等待二者均清零 |
 | `edc8479` | 下载 worker 抢占竞态 + mid 过滤失效 | 原子认领 `claim_next_pending()` + `set_mid()` |
+| `b344479` | 清晰度档位越级 | `pick_best` 选码率最高的流，请求 1080p+ 会拿到 4K → 新增 `pick_best_leq()` 限制在请求档位内 |
 
 ---
 

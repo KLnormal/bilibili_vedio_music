@@ -156,3 +156,16 @@ def pick_best(streams: List[Stream]) -> Optional[Stream]:
     if not streams:
         return None
     return max(streams, key=lambda s: s.bandwidth or 0)
+
+
+def pick_best_leq(streams: List[Stream], qn: int) -> Optional[Stream]:
+    """Pick the highest-bandwidth stream whose quality_id does not exceed ``qn``.
+
+    Bilibili's playurl returns *all* streams the account is entitled to (even
+    higher than the requested ``qn``); this keeps the selection within the
+    user's requested tier so ``--quality 1080p+`` never jumps to 4K.
+    """
+    eligible = [s for s in streams if s.quality_id <= qn]
+    if not eligible:
+        return None
+    return max(eligible, key=lambda s: s.bandwidth or 0)

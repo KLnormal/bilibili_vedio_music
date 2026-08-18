@@ -9,7 +9,7 @@ from unittest import mock
 import yaml
 
 from bilibili_crawler.app import App
-from bilibili_crawler.bilibili.video import VideoDetail
+from bilibili_crawler.bilibili.video import Stream, VideoDetail, pick_best_leq
 from bilibili_crawler.database.database import Database
 from bilibili_crawler.database.models import DownloadStatus, Up, Video
 from bilibili_crawler.database.repository import Repository
@@ -233,6 +233,17 @@ class DownloadOptionsTest(unittest.TestCase):
         self.assertEqual(DownloadOptions(quality="1080p60").qn, 116)
         self.assertEqual(DownloadOptions(quality="4k").qn, 120)
         self.assertIsNone(DownloadOptions().qn)
+
+    def test_pick_best_leq_respects_tier(self):
+        streams = [
+            Stream(url="a", quality_id=120, bandwidth=9_000_000),
+            Stream(url="b", quality_id=112, bandwidth=2_750_000),
+            Stream(url="c", quality_id=80, bandwidth=1_800_000),
+        ]
+        self.assertEqual(pick_best_leq(streams, 112).quality_id, 112)  # never 120
+        self.assertEqual(pick_best_leq(streams, 120).quality_id, 120)
+        self.assertEqual(pick_best_leq(streams, 80).quality_id, 80)
+        self.assertIsNone(pick_best_leq(streams, 16))
 
     def test_quality_name_reverse(self):
         self.assertEqual(quality_name(64), "720p")
