@@ -23,6 +23,7 @@ from .database.repository import Repository
 from .downloader.downloader import VideoDownloader
 from .downloader.limiter import RateLimiter, mbps_to_bps
 from .downloader.task_manager import DownloadTaskManager
+from .filter.decision import DecisionEngine
 from .filter.duration_filter import DurationFilter
 from .options import DownloadOptions
 from .state import RuntimeState
@@ -229,6 +230,38 @@ class App:
 
     def list_blacklist(self, mid: int) -> List[str]:
         return self.repo.list_blacklist(mid)
+
+    def prepare_download(self, mid: Optional[int], options: DownloadOptions) -> Dict[str, int]:
+        """Re-evaluate rules for PENDING videos, applying CLI overrides.
+
+        READY videos stay PENDING; FILTERED videos are marked FILTERED with an
+        explainable ``filter_reason`` (blacklist / duration). The downloader
+        then only consumes READY (PENDING) videos. ``mid=None`` applies to all
+        enabled UPs, each with its own blacklist.
+        """
+        min_d = (
+            options.min_duration
+            if options.min_duration is not None
+            else self.config["filter"]["min_duration"]
+        )
+        max_d = (
+            options.max_duration
+            if options.max_duration is not None
+            else self.config["filter"]["max_duration"]
+        )
+        mids = [mid] if mid is not None else [u.mid for u in self.repo.list_ups(enabled_only=True)]
+
+        counts: Dict[str, int] = {"ready": 0, "filtered": 0}
+        for m in mids:
+            engine = DecisionEngine(min_d, max_d, self.repo.list_blacklist(m))
+            for video in self.repo.list_pending(m):
+                decision = engine.decide(video)
+                if decision.decision == "READY":
+                    counts["ready"] += 1
+                elif decision.decision == "FILTERED":
+                    self.repo.set_filtered(video.bvid, decision.reason)
+                    counts["filtered"] += 1
+        return counts
 
     def set_limit(self, mbps: float) -> float:
         self.limiter.set_rate(mbps_to_bps(mbps))

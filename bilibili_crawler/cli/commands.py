@@ -141,6 +141,11 @@ def _download_once(app: App, mid: Optional[int], options: DownloadOptions) -> No
     # Foreground download loop for headless CLI use.
     if app.has_ffmpeg is False:
         print("[warn] ffmpeg not found; DASH streams will fall back to progressive.")
+    # Re-evaluate rules (duration / blacklist) before downloading: only READY
+    # videos stay PENDING; the rest are marked FILTERED with a reason.
+    counts = app.prepare_download(mid, options)
+    if counts["filtered"]:
+        print(f"filtered {counts['filtered']} video(s) by rules (blacklist/duration).")
     pending = app.repo.list_pending(mid=mid, limit=1000)
     print(f"{len(pending)} PENDING video(s) to download.")
     app.state.set_pending_count(len(pending))

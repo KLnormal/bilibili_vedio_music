@@ -13,7 +13,9 @@ from bilibili_crawler.database.models import DownloadStatus, Up, Video
 from bilibili_crawler.database.repository import Repository
 from bilibili_crawler.downloader.limiter import RateLimiter, mbps_to_bps
 from bilibili_crawler.filter.blacklist_filter import blacklist_hit, blacklist_match
+from bilibili_crawler.filter.decision import DecisionEngine
 from bilibili_crawler.filter.duration_filter import DurationFilter
+from bilibili_crawler.filter.explain import explain
 from bilibili_crawler.options import DownloadOptions, quality_name
 
 
@@ -101,6 +103,44 @@ class RepositoryTest(unittest.TestCase):
         self.repo.insert_video(Video(bvid="BV1c", mid=1, title="c", download_status=DownloadStatus.DOWNLOADED))
         downloaded = self.repo.list_downloaded(1)
         self.assertEqual({v.bvid for v in downloaded}, {"BV1a", "BV1c"})
+
+
+class DecisionEngineTest(unittest.TestCase):
+    """v0.2 Phase 4: unified rule decision + explanation."""
+
+    def setUp(self):
+        self.engine = DecisionEngine(300, 1800, ["TEST"])
+
+    def test_ready(self):
+        v = Video(bvid="BV1a", mid=1, duration=600, title="ok", download_status=DownloadStatus.PENDING)
+        self.assertEqual(self.engine.decide(v).decision, "READY")
+
+    def test_filtered_duration(self):
+        v = Video(bvid="BV1a", mid=1, duration=45, title="short", download_status=DownloadStatus.PENDING)
+        d = self.engine.decide(v)
+        self.assertEqual(d.decision, "FILTERED")
+        self.assertEqual(d.reason, "duration_out_of_range")
+
+    def test_filtered_blacklist(self):
+        v = Video(bvid="BV1a", mid=1, duration=600, title="TESTDATAABC", download_status=DownloadStatus.PENDING)
+        d = self.engine.decide(v)
+        self.assertEqual(d.decision, "FILTERED")
+        self.assertEqual(d.reason, "blacklist: TEST")
+
+    def test_downloaded_vs_missing(self):
+        v = Video(bvid="BV1a", mid=1, duration=600, title="t", download_status=DownloadStatus.DOWNLOADED, download_path="/no/such.mp4")
+        self.assertEqual(self.engine.decide(v).decision, "MISSING")
+
+    def test_failed(self):
+        v = Video(bvid="BV1a", mid=1, duration=600, title="t", download_status=DownloadStatus.FAILED, download_error="boom")
+        self.assertEqual(self.engine.decide(v).decision, "FAILED")
+
+    def test_explain_output(self):
+        v = Video(bvid="BV1a", mid=1, duration=600, title="TESTDATAABC", download_status=DownloadStatus.PENDING)
+        d = self.engine.decide(v)
+        text = explain(d, v, 300, 1800)
+        self.assertIn("Decision: FILTERED", text)
+        self.assertIn("Reason: blacklist: TEST", text)
 
 
 class BlacklistFilterTest(unittest.TestCase):

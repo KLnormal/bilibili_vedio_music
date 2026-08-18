@@ -12,7 +12,7 @@
 | 版本 | v0.2.0（开发中） |
 | 里程碑 | v0.1.0 十项目标已实现；v0.2.0 按 8 个 Phase 推进中 |
 | 当前分支 | `main` |
-| 测试 | 离线单测 23/23 通过 |
+| 测试 | 离线单测 29/29 通过 |
 | 关键验证 | ✅ 1080P / 4K 下载链路可行（ffprobe 实测） |
 
 ---
@@ -24,7 +24,7 @@
 | Phase 1 | CLI 基础整理（`download-bv` / `status` / `check`） | ✅ 完成 |
 | Phase 2 | 下载参数体系（`--quality` / `--type` / `--min-duration` / `--max-duration`） | ✅ 完成 |
 | Phase 3 | UP 专属标题黑名单（`up_blacklist` 表 + `filter_reason` + SKIPPED→FILTERED） | ✅ 完成 |
-| Phase 4 | 统一规则决策器与解释（`filter/decision.py` + `explain.py`） | ⬜ 待办 |
+| Phase 4 | 统一规则决策器与解释（`filter/decision.py` + `explain.py`） | ✅ 完成 |
 | Phase 5 | `preview` 预览模式（dry-run） | ⬜ 待办 |
 | Phase 6 | `check`/`scan` 文件一致性与孤儿 DOWNLOADING 恢复 | ⬜ 待办 |
 | Phase 7 | TUI 增强 | ⬜ 待办 |
@@ -48,6 +48,8 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 - downloader 支持 audio 模式（`.m4a`，无 MP3 转码）
 - UP 专属标题黑名单：`up_blacklist` 表 + `blacklist add/remove/list` 命令 + `blacklist_filter.py`（casefold 子串匹配）
 - `DownloadStatus.SKIPPED → FILTERED` 迁移 + `video.filter_reason` 字段（幂等迁移）
+- 统一决策器 `DecisionEngine`（READY/FILTERED/DOWNLOADED/MISSING/FAILED + reason）+ 规则解释 `explain.py`
+- `download` 命令接入决策器：下载前重新评估黑名单/时长，只下载 READY
 
 ---
 
@@ -59,7 +61,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | database | `database/{models,database,repository}.py` | ✅ 稳定 | SQLite；原子认领 `claim_next_pending()`；新增 `list_downloaded()` |
 | bilibili | `bilibili/{client,auth,user,video}.py` | ✅ 稳定 | WBI 签名、风控重试、扫码登录、投稿/详情/播放地址 |
 | crawler | `crawler/{user_crawler,video_crawler,scheduler}.py` | ✅ 稳定 | 全量/增量扫描、去重、调度循环 |
-| filter | `filter/{duration_filter,blacklist_filter}.py` | ✅ 稳定 | 时长窗口 + 黑名单子串匹配（Phase 4 扩展 decision/explain） |
+| filter | `filter/{duration_filter,blacklist_filter,decision,explain}.py` | ✅ 稳定 | 时长/黑名单规则 + 统一决策器 + 规则解释 |
 | downloader | `downloader/{limiter,downloader,task_manager}.py` | ✅ 稳定 | 令牌桶限速、DASH+ffmpeg 合并、状态机 |
 | cli | `cli/{commands,tui,keyreader}.py` | ✅ 稳定 | 新增 `download-bv`/`status`/`check` |
 | state | `state.py` | ✅ 稳定 | 线程安全共享运行状态 |

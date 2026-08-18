@@ -207,6 +207,15 @@ class Repository:
                 )
         return cur.rowcount
 
+    def set_filtered(self, bvid: str, reason: str) -> None:
+        """Mark a video FILTERED with an explainable ``filter_reason``."""
+        with self._lock:
+            self._db.connection.execute(
+                "UPDATE video SET download_status = 'FILTERED', filter_reason = ? "
+                "WHERE bvid = ?",
+                (reason, bvid),
+            )
+
     def list_videos(self, mid: Optional[int] = None) -> List[Video]:
         query = "SELECT * FROM video"
         params: list = []
