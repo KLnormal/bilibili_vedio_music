@@ -10,10 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-# User-facing quality name -> Bilibili qn code (AGENT_PROMPT_v0.2 section 10).
+# User-facing quality name -> Bilibili qn code (AGENT_PROMPT_v0.2 section 10,
+# extended with 1080P high-bitrate "1080p+" per user request).
 QUALITY_TO_QN = {
     "720p": 64,
     "1080p": 80,
+    "1080p+": 112,     # 1080P 高码率
     "1080p60": 116,
     "4k": 120,
 }

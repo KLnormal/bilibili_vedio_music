@@ -467,6 +467,7 @@ BV
 ```bash
 python main.py download <mid> --quality 720p
 python main.py download <mid> --quality 1080p
+python main.py download <mid> --quality 1080p+
 python main.py download <mid> --quality 1080p60
 python main.py download <mid> --quality 4k
 ```
@@ -484,6 +485,7 @@ python main.py download-bv BVxxxx --quality 4k
 ```text
 720p    → qn 64
 1080p   → qn 80
+1080p+  → qn 112   （1080P 高码率）
 1080p60  → qn 116
 4k      → qn 120
 ```

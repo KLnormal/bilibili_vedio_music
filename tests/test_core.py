@@ -229,6 +229,7 @@ class DownloadOptionsTest(unittest.TestCase):
     def test_quality_to_qn_mapping(self):
         self.assertEqual(DownloadOptions(quality="720p").qn, 64)
         self.assertEqual(DownloadOptions(quality="1080p").qn, 80)
+        self.assertEqual(DownloadOptions(quality="1080p+").qn, 112)
         self.assertEqual(DownloadOptions(quality="1080p60").qn, 116)
         self.assertEqual(DownloadOptions(quality="4k").qn, 120)
         self.assertIsNone(DownloadOptions().qn)

@@ -43,7 +43,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 - `download-bv <bvid>...`：BV 直接下载，绕过 UP 规则（`app.download_bv`）
 - `status [mid]`：全局 / 单 UP 状态统计（`app.status`）
 - `check [mid]`：本地文件一致性检查，MISSING → PENDING 恢复（`app.check_files`）
-- 下载参数：`--quality`（720p/1080p/1080p60/4k → qn）、`--type`（video/audio → m4a）、`--min-duration`/`--max-duration`
+- 下载参数：`--quality`（720p/1080p/**1080p+**/1080p60/4k → qn）、`--type`（video/audio → m4a）、`--min-duration`/`--max-duration`
 - `DownloadOptions` 统一参数对象 + 质量映射（`options.py`）
 - downloader 支持 audio 模式（`.m4a`，无 MP3 转码）
 - UP 专属标题黑名单：`up_blacklist` 表 + `blacklist add/remove/list` 命令 + `blacklist_filter.py`（casefold 子串匹配）
