@@ -24,6 +24,7 @@ from typing import List, Optional
 
 from .. import __version__
 from ..app import App, check_ffmpeg
+from ..options import DownloadOptions, MEDIA_TYPES, QUALITY_TO_QN
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -50,6 +51,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_dl = sub.add_parser("download", help="download PENDING videos once")
     p_dl.add_argument("--mid", type=int, default=None)
+    p_dl.add_argument("--quality", choices=list(QUALITY_TO_QN.keys()), default=None,
+                      help="720p/1080p/1080p60/4k")
+    p_dl.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video",
+                      help="video (mp4) or audio (m4a)")
+    p_dl.add_argument("--min-duration", type=int, default=None, help="seconds, inclusive")
+    p_dl.add_argument("--max-duration", type=int, default=None, help="seconds, inclusive")
 
     p_retry = sub.add_parser("retry", help="reset FAILED videos to PENDING")
     p_retry.add_argument("--mid", type=int, default=None)
@@ -62,6 +69,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_dlbv = sub.add_parser("download-bv", help="download video(s) directly by bvid (bypass UP rules)")
     p_dlbv.add_argument("bvids", nargs="+", help="one or more BV ids")
+    p_dlbv.add_argument("--quality", choices=list(QUALITY_TO_QN.keys()), default=None,
+                        help="720p/1080p/1080p60/4k")
+    p_dlbv.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video",
+                        help="video (mp4) or audio (m4a)")
 
     p_limit = sub.add_parser("limit", help="show or set download speed limit (MB/s)")
     p_limit.add_argument("mbps", type=float, nargs="?")
@@ -115,14 +126,15 @@ def _cmd_scan(app: App, mid: Optional[int]) -> int:
     return 0
 
 
-def _download_once(app: App, mid: Optional[int]) -> None:
+def _download_once(app: App, mid: Optional[int], options: DownloadOptions) -> None:
     # Foreground download loop for headless CLI use.
     if app.has_ffmpeg is False:
         print("[warn] ffmpeg not found; DASH streams will fall back to progressive.")
     pending = app.repo.list_pending(mid=mid, limit=1000)
     print(f"{len(pending)} PENDING video(s) to download.")
     app.state.set_pending_count(len(pending))
-    # Restrict the workers to the requested UP (if any).
+    # Restrict the workers to the requested UP (if any) and apply options.
+    app.download_manager.set_options(options)
     app.download_manager.set_mid(mid)
     app.download_manager.start()
     try:
@@ -143,8 +155,8 @@ def _download_once(app: App, mid: Optional[int]) -> None:
     print(f"downloaded={snap.downloaded_count} failed={snap.failed_count}")
 
 
-def _cmd_download(app: App, mid: Optional[int]) -> int:
-    _download_once(app, mid)
+def _cmd_download(app: App, mid: Optional[int], options: DownloadOptions) -> int:
+    _download_once(app, mid, options)
     return 0
 
 
@@ -178,11 +190,11 @@ def _cmd_check(app: App, mid: Optional[int]) -> int:
     return 0
 
 
-def _cmd_download_bv(app: App, bvids: List[str]) -> int:
+def _cmd_download_bv(app: App, bvids: List[str], options: DownloadOptions) -> int:
     if app.has_ffmpeg is False:
         print("[warn] ffmpeg not found; DASH streams will fall back to progressive.")
     print(f"Downloading {len(bvids)} video(s) by bvid (bypassing UP rules)...")
-    results = app.download_bv(bvids)
+    results = app.download_bv(bvids, options)
     ok = 0
     for bvid, success, msg in results:
         if success:
@@ -216,7 +228,7 @@ def _cmd_run(app: App, mid: Optional[int], once: bool) -> int:
                 f"scan done: new={stats.new} existing={stats.existing} "
                 f"eligible={stats.eligible} filtered={stats.filtered}"
             )
-            _download_once(app, mid)
+            _download_once(app, mid, DownloadOptions())
         finally:
             app.download_manager.stop()
         return 0
@@ -249,9 +261,16 @@ def main(argv: Optional[list] = None) -> int:
         if args.command == "scan":
             return _cmd_scan(app, args.mid)
         if args.command == "download":
-            return _cmd_download(app, args.mid)
+            opts = DownloadOptions(
+                quality=args.quality,
+                media_type=args.media_type,
+                min_duration=args.min_duration,
+                max_duration=args.max_duration,
+            )
+            return _cmd_download(app, args.mid, opts)
         if args.command == "download-bv":
-            return _cmd_download_bv(app, args.bvids)
+            opts = DownloadOptions(quality=args.quality, media_type=args.media_type)
+            return _cmd_download_bv(app, args.bvids, opts)
         if args.command == "retry":
             return _cmd_retry(app, args.mid)
         if args.command == "status":

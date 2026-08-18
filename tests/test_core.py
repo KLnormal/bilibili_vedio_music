@@ -13,6 +13,7 @@ from bilibili_crawler.database.models import DownloadStatus, Up, Video
 from bilibili_crawler.database.repository import Repository
 from bilibili_crawler.downloader.limiter import RateLimiter, mbps_to_bps
 from bilibili_crawler.filter.duration_filter import DurationFilter
+from bilibili_crawler.options import DownloadOptions, quality_name
 
 
 class DurationFilterTest(unittest.TestCase):
@@ -99,6 +100,35 @@ class RepositoryTest(unittest.TestCase):
         self.repo.insert_video(Video(bvid="BV1c", mid=1, title="c", download_status=DownloadStatus.DOWNLOADED))
         downloaded = self.repo.list_downloaded(1)
         self.assertEqual({v.bvid for v in downloaded}, {"BV1a", "BV1c"})
+
+
+class DownloadOptionsTest(unittest.TestCase):
+    """v0.2 Phase 2: quality mapping + media type."""
+
+    def test_quality_to_qn_mapping(self):
+        self.assertEqual(DownloadOptions(quality="720p").qn, 64)
+        self.assertEqual(DownloadOptions(quality="1080p").qn, 80)
+        self.assertEqual(DownloadOptions(quality="1080p60").qn, 116)
+        self.assertEqual(DownloadOptions(quality="4k").qn, 120)
+        self.assertIsNone(DownloadOptions().qn)
+
+    def test_quality_name_reverse(self):
+        self.assertEqual(quality_name(64), "720p")
+        self.assertEqual(quality_name(120), "4k")
+        self.assertEqual(quality_name(999), "999")
+
+    def test_validate_media_type(self):
+        with self.assertRaises(ValueError):
+            DownloadOptions(media_type="mp3").validate()
+        DownloadOptions(media_type="audio").validate()  # ok
+
+    def test_validate_quality(self):
+        with self.assertRaises(ValueError):
+            DownloadOptions(quality="8k").validate()
+
+    def test_validate_duration_order(self):
+        with self.assertRaises(ValueError):
+            DownloadOptions(min_duration=500, max_duration=300).validate()
 
 
 class CheckFilesTest(unittest.TestCase):

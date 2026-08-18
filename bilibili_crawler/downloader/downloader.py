@@ -88,20 +88,26 @@ class VideoDownloader:
         up_dir: str,
         limiter: RateLimiter,
         progress: Optional[ProgressCallback] = None,
+        media_type: str = "video",
+        qn: Optional[int] = None,
     ) -> Path:
         """Download ``detail`` and return the final file path.
 
-        Raises :class:`DownloadError` on failure. The caller is responsible for
-        updating the database status; this method only performs I/O.
+        ``media_type`` selects ``video`` (MP4) or ``audio`` (M4A, no video and
+        no MP3 transcode). ``qn`` overrides the configured quality for this
+        single download. Raises :class:`DownloadError` on failure; the caller
+        owns the database status update.
         """
         if detail.cid is None:
             raise DownloadError(f"video {detail.bvid} has no cid (cannot download)")
+
+        effective_qn = qn if qn is not None else self.qn
 
         # DASH (separate audio/video) needs ffmpeg to merge. Without it we ask
         # Bilibili for a single progressive stream instead.
         use_dash = self.prefer_dash and self.has_ffmpeg
         playback = get_playback_info(
-            self.client, detail.bvid, detail.cid, qn=self.qn, prefer_dash=use_dash
+            self.client, detail.bvid, detail.cid, qn=effective_qn, prefer_dash=use_dash
         )
 
         save_dir = self.save_root / sanitize_filename(up_dir, max_len=60)
@@ -109,6 +115,10 @@ class VideoDownloader:
 
         # ``bvid`` already carries the "BV" prefix.
         base = f"{sanitize_filename(detail.title)} [{detail.bvid}]"
+
+        if media_type == "audio":
+            return self._download_audio(detail, playback, save_dir, base, limiter, progress)
+
         final_path = save_dir / f"{base}.mp4"
 
         if use_dash and playback.video_streams:
@@ -122,13 +132,68 @@ class VideoDownloader:
         # Last resort: re-request a progressive stream (covers "ffmpeg missing
         # but DASH came back anyway" and empty-DASH edge cases).
         fallback = get_playback_info(
-            self.client, detail.bvid, detail.cid, qn=self.qn, prefer_dash=False
+            self.client, detail.bvid, detail.cid, qn=effective_qn, prefer_dash=False
         )
         if fallback.progressive_streams:
             self._download_progressive(detail, fallback, final_path, limiter, progress)
             return final_path
 
         raise DownloadError(f"no downloadable stream for {detail.bvid}")
+
+    # --------------------------------------------------------------- audio --
+    def _download_audio(
+        self,
+        detail: VideoDetail,
+        playback,
+        save_dir: Path,
+        base: str,
+        limiter: RateLimiter,
+        progress: Optional[ProgressCallback],
+    ) -> Path:
+        """Download only the audio track, saved as ``.m4a`` (no MP3 transcode)."""
+        final_path = save_dir / f"{base}.m4a"
+
+        audio_stream = pick_best(playback.audio_streams)
+        if audio_stream is not None:
+            self._download_stream(
+                audio_stream.url, final_path, detail.bvid, limiter, progress,
+                suffix=" (audio)",
+            )
+            return final_path
+
+        # No DASH audio available: extract the track from a progressive stream.
+        if not self.has_ffmpeg:
+            raise DownloadError(
+                f"audio download needs ffmpeg (no DASH audio stream for {detail.bvid})"
+            )
+        fallback = get_playback_info(
+            self.client, detail.bvid, detail.cid, qn=self.qn, prefer_dash=False
+        )
+        stream = pick_best(fallback.progressive_streams)
+        if stream is None:
+            raise DownloadError(f"no audio stream for {detail.bvid}")
+
+        tmp = save_dir / f"{base}.audio.src.part"
+        try:
+            self._download_stream(
+                stream.url, tmp, detail.bvid, limiter, progress, suffix=" (progressive)"
+            )
+            self._extract_audio(tmp, final_path)
+        finally:
+            tmp.unlink(missing_ok=True)
+        return final_path
+
+    def _extract_audio(self, src: Path, output: Path) -> None:
+        cmd = [
+            self.ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error",
+            "-i", str(src), "-vn", "-c", "copy", str(output),
+        ]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+        except OSError as exc:
+            raise DownloadError(f"failed to run ffmpeg: {exc}") from exc
+        if proc.returncode != 0:
+            raise DownloadError(f"ffmpeg audio extract failed: {proc.stderr.strip()[:300]}")
 
     # ------------------------------------------------------------ progressive --
     def _download_progressive(

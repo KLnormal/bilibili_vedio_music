@@ -12,7 +12,7 @@
 | 版本 | v0.2.0（开发中） |
 | 里程碑 | v0.1.0 十项目标已实现；v0.2.0 按 8 个 Phase 推进中 |
 | 当前分支 | `main` |
-| 测试 | 离线单测 13/13 通过 |
+| 测试 | 离线单测 18/18 通过 |
 | 关键验证 | ✅ 1080P / 4K 下载链路可行（ffprobe 实测） |
 
 ---
@@ -22,7 +22,7 @@
 | Phase | 内容 | 状态 |
 |-------|------|------|
 | Phase 1 | CLI 基础整理（`download-bv` / `status` / `check`） | ✅ 完成 |
-| Phase 2 | 下载参数体系（`--quality` / `--type` / `--min-duration` / `--max-duration`） | ⬜ 待办 |
+| Phase 2 | 下载参数体系（`--quality` / `--type` / `--min-duration` / `--max-duration`） | ✅ 完成 |
 | Phase 3 | UP 专属标题黑名单（`up_blacklist` 表 + `filter_reason` + SKIPPED→FILTERED） | ⬜ 待办 |
 | Phase 4 | 统一规则决策器与解释（`filter/decision.py` + `explain.py`） | ⬜ 待办 |
 | Phase 5 | `preview` 预览模式（dry-run） | ⬜ 待办 |
@@ -38,11 +38,14 @@
 
 UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、时长筛选、下载状态机、登录、人工验证介入、40MB/s 限速、btop 风格 TUI、WBI/风控重试、DASH+ffmpeg 下载、原子任务认领。
 
-### v0.2.0 已完成（Phase 1）
+### v0.2.0 已完成（Phase 1~2）
 
 - `download-bv <bvid>...`：BV 直接下载，绕过 UP 规则（`app.download_bv`）
 - `status [mid]`：全局 / 单 UP 状态统计（`app.status`）
 - `check [mid]`：本地文件一致性检查，MISSING → PENDING 恢复（`app.check_files`）
+- 下载参数：`--quality`（720p/1080p/1080p60/4k → qn）、`--type`（video/audio → m4a）、`--min-duration`/`--max-duration`
+- `DownloadOptions` 统一参数对象 + 质量映射（`options.py`）
+- downloader 支持 audio 模式（`.m4a`，无 MP3 转码）
 
 ---
 
@@ -59,7 +62,8 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | cli | `cli/{commands,tui,keyreader}.py` | ✅ 稳定 | 新增 `download-bv`/`status`/`check` |
 | state | `state.py` | ✅ 稳定 | 线程安全共享运行状态 |
 | app | `app.py` | ✅ 稳定 | 新增 `status`/`check_files`/`download_bv` |
-| tests | `tests/{test_core,e2e_demo}.py` | ✅ 稳定 | 13 个离线单测 |
+| options | `options.py` | ✅ 稳定 | `DownloadOptions` 统一参数对象 + 质量映射 |
+| tests | `tests/{test_core,e2e_demo}.py` | ✅ 稳定 | 18 个离线单测 |
 
 ---
 

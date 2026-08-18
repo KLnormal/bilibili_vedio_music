@@ -17,6 +17,7 @@ from typing import List, Optional
 
 from ..database.models import DownloadStatus
 from ..database.repository import Repository
+from ..options import DownloadOptions
 from ..state import RuntimeState
 from .downloader import DownloadError, VideoDownloader
 
@@ -36,11 +37,16 @@ class DownloadTaskManager:
         self._workers: List[threading.Thread] = []
         self._stop_event = threading.Event()
         self._mid: Optional[int] = None
+        self._options = DownloadOptions()
 
     # -------------------------------------------------------------- control --
     def set_mid(self, mid: Optional[int]) -> None:
         """Restrict downloads to a single UP (None = all UPs)."""
         self._mid = mid
+
+    def set_options(self, options: DownloadOptions) -> None:
+        """Set download options (quality / media type) for this run."""
+        self._options = options
 
     def start(self) -> None:
         self._stop_event.clear()
@@ -103,7 +109,12 @@ class DownloadTaskManager:
                 )
 
             path = self.downloader.download(
-                detail, up_dir, self.state.limiter, progress=on_progress
+                detail,
+                up_dir,
+                self.state.limiter,
+                progress=on_progress,
+                media_type=self._options.media_type,
+                qn=self._options.qn,
             )
             self.repo.update_download_status(
                 bvid, DownloadStatus.DOWNLOADED, path=str(path)

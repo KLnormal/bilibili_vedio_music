@@ -24,6 +24,7 @@ from .downloader.downloader import VideoDownloader
 from .downloader.limiter import RateLimiter, mbps_to_bps
 from .downloader.task_manager import DownloadTaskManager
 from .filter.duration_filter import DurationFilter
+from .options import DownloadOptions
 from .state import RuntimeState
 
 logger = logging.getLogger(__name__)
@@ -189,12 +190,13 @@ class App:
                 self.repo.update_download_status(v.bvid, DownloadStatus.PENDING)
         return {"checked": len(videos), "missing": missing}
 
-    def download_bv(self, bvids: List[str]) -> List[tuple]:
+    def download_bv(self, bvids: List[str], options: Optional[DownloadOptions] = None) -> List[tuple]:
         """Directly download videos by bvid, bypassing all UP rules.
 
         Explicitly specifying a BV means the user explicitly wants it downloaded
         (v0.2 section 9): no add, no scan, no UP blacklist, no duration filter.
         """
+        options = options or DownloadOptions()
         results: List[tuple] = []
         for bvid in bvids:
             try:
@@ -204,7 +206,10 @@ class App:
                     up_dir = (up.name if up and up.name else str(detail.mid))
                 else:
                     up_dir = "direct"
-                path = self.downloader.download(detail, up_dir, self.limiter)
+                path = self.downloader.download(
+                    detail, up_dir, self.limiter,
+                    media_type=options.media_type, qn=options.qn,
+                )
                 results.append((bvid, True, str(path)))
             except Exception as exc:  # noqa: BLE001
                 results.append((bvid, False, str(exc)))
