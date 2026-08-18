@@ -2,22 +2,26 @@
 
 测试案例（用户指定）：
     UP          : 3546660365928495 (Empty_old_City)
-    清晰度      : 1080p+（1080P 高码率，qn 112）
+    清晰度      : 1080p+（1080P 高码率，qn 112；audio 模式不适用）
     时长窗口    : 120s ~ 300s（含边界）
     黑名单关键字: Buffer（大小写不敏感子串匹配）
+    媒体类型    : --type video（默认，ffprobe 验证 >=1080P）
+                  --type audio（仅音频，ffprobe 验证 .m4a 纯音频无视频流）
 
 验证链路（对应 v0.2 验收）：
     add -> scan -> 窗口筛选 -> 黑名单 add -> download(1080p+)
-    -> Buffer 命中 FILTERED / 其余 READY 下载 -> ffprobe 验证 1080P
+    -> Buffer 命中 FILTERED / 其余 READY 下载 -> ffprobe 验证
     -> preview 统计 -> 增量 scan
 
 运行（需已登录 cookies.json + ffmpeg）：
-    python tests/e2e_v020_demo.py
+    python tests/e2e_v020_demo.py                 # 视频
+    python tests/e2e_v020_demo.py --type audio    # 仅音频
 
 退出码 0 = 全部通过。
 """
 from __future__ import annotations
 
+import argparse
 import shutil
 import subprocess
 import sys
@@ -82,6 +86,27 @@ def ffprobe_info(ffmpeg: str, path: Path) -> Optional[dict]:
         return None
 
 
+def ffprobe_audio_info(ffmpeg: str, path: Path) -> Optional[dict]:
+    """Check an audio file: has audio stream, no video stream."""
+    ffprobe = str(Path(ffmpeg).parent / ("ffprobe.exe" if sys.platform == "win32" else "ffprobe"))
+    try:
+        r = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "stream=codec_type,codec_name",
+             "-of", "json", str(path)],
+            capture_output=True, text=True, timeout=60,
+        )
+        import json
+        streams = json.loads(r.stdout or "{}").get("streams") or []
+        types = [s.get("codec_type") for s in streams]
+        return {
+            "has_audio": "audio" in types,
+            "has_video": "video" in types,
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"    ffprobe error: {exc}")
+        return None
+
+
 def wait_downloads(app: App, mid: int, timeout_s: int = 1800) -> None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -93,6 +118,12 @@ def wait_downloads(app: App, mid: int, timeout_s: int = 1800) -> None:
 
 
 def main() -> int:
+    arg_parser = argparse.ArgumentParser(description=__doc__)
+    arg_parser.add_argument("--type", choices=["video", "audio"], default="video",
+                            help="media type to download: video (mp4) or audio (m4a)")
+    args = arg_parser.parse_args()
+    media_type = args.type
+
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
         print("ffmpeg not found; 1080p+ DASH merge requires ffmpeg.")
@@ -118,7 +149,7 @@ def main() -> int:
     app = App(config_path=str(cfg_path))
     print("=" * 70)
     print(f"测试案例: UP={UP_NAME_EXPECTED}({UP_MID}) quality={QUALITY} "
-          f"window=[{DUR_MIN},{DUR_MAX}]s blacklist={BLACKLIST_KW}")
+          f"window=[{DUR_MIN},{DUR_MAX}]s blacklist={BLACKLIST_KW} type={media_type}")
     print(f"login: {app.login.is_logged_in} | ffmpeg: {ffmpeg}")
     print("=" * 70)
 
@@ -145,8 +176,8 @@ def main() -> int:
         hit_bvids = [v.bvid for v in in_window if BLACKLIST_KW.lower() in v.title.casefold()]
         check("T4 blacklist added", len(hit_bvids) > 0, f"hits={len(hit_bvids)} {hit_bvids}")
 
-        # ---- T5 下载（1080p+，决策器重新评估黑名单/时长） ----------------------
-        options = DownloadOptions(quality=QUALITY, media_type="video",
+        # ---- T5 下载（决策器重新评估黑名单/时长） ------------------------------
+        options = DownloadOptions(quality=QUALITY, media_type=media_type,
                                   min_duration=DUR_MIN, max_duration=DUR_MAX)
         prepared = app.prepare_download(UP_MID, options)
         check("T5 prepare: Buffer hit -> FILTERED, rest READY",
@@ -174,17 +205,26 @@ def main() -> int:
         check("T6 others DOWNLOADED", len(downloaded) == len(in_window) - len(hit_bvids),
               f"downloaded={len(downloaded)}")
 
-        # ---- T7 ffprobe 清晰度验证（>=1080P） --------------------------------
+        # ---- T7 媒体格式验证 --------------------------------------------------
+        # video: ffprobe width >= 1920 (1080P 及以上)
+        # audio: .m4a、有音频流、无视频流
         bad_media = []
         for bvid in downloaded:
             path = Path(fresh[bvid].download_path) if fresh[bvid].download_path else None
             if path is None or not path.is_file():
                 bad_media.append((bvid, "file missing"))
                 continue
-            info = ffprobe_info(ffmpeg, path)
-            if info is None or info["width"] < 1920:
-                bad_media.append((bvid, info))
-        check("T7 media >= 1080P", not bad_media, f"bad={bad_media}")
+            if media_type == "audio":
+                info = ffprobe_audio_info(ffmpeg, path)
+                if (info is None or not info["has_audio"] or info["has_video"]
+                        or not path.name.endswith(".m4a")):
+                    bad_media.append((bvid, info))
+            else:
+                info = ffprobe_info(ffmpeg, path)
+                if info is None or info["width"] < 1920:
+                    bad_media.append((bvid, info))
+        check(f"T7 media {'audio .m4a (no video)' if media_type == 'audio' else '>= 1080P'}",
+              not bad_media, f"bad={bad_media}")
 
         # ---- T8 preview 统计 --------------------------------------------------
         # preview 统计全部视频的决策：窗口外(时长过滤) + 窗口内(黑名单过滤) 均为 FILTERED。
