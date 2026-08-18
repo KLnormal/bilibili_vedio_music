@@ -107,7 +107,7 @@ def _cmd_scan(app: App, mid: Optional[int]) -> int:
 
 
 def _download_once(app: App, mid: Optional[int]) -> None:
-    # Single-threaded foreground download loop for headless CLI use.
+    # Foreground download loop for headless CLI use.
     if app.has_ffmpeg is False:
         print("[warn] ffmpeg not found; DASH streams will fall back to progressive.")
     pending = app.repo.list_pending(mid=mid, limit=1000)
@@ -115,13 +115,19 @@ def _download_once(app: App, mid: Optional[int]) -> None:
     app.state.set_pending_count(len(pending))
     app.download_manager.start()
     try:
+        # Wait until BOTH pending and in-flight (DOWNLOADING) tasks are done.
+        # Checking only PENDING is buggy: a worker flips PENDING -> DOWNLOADING
+        # the moment it claims a video, so PENDING briefly hits 0 while a
+        # download is still running, and the loop would exit early.
         while True:
-            remaining = len(app.repo.list_pending(mid=mid, limit=1))
-            if remaining == 0:
+            statuses = app.repo.count_by_status(mid)
+            active = statuses.get("PENDING", 0) + statuses.get("DOWNLOADING", 0)
+            if active == 0:
                 break
             time.sleep(0.5)
     finally:
         app.download_manager.stop()
+        app.download_manager.join(timeout=10)
     snap = app.state.snapshot()
     print(f"downloaded={snap.downloaded_count} failed={snap.failed_count}")
 
