@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import shutil
 import threading
+from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -262,6 +263,38 @@ class App:
                     self.repo.set_filtered(video.bvid, decision.reason)
                     counts["filtered"] += 1
         return counts
+
+    def preview(self, mid: Optional[int], options: DownloadOptions) -> dict:
+        """Evaluate rules without downloading (dry-run).
+
+        Returns decision statistics plus the full (video, decision) list so the
+        CLI/TUI can show both aggregate counts and per-video explanations.
+        """
+        min_d = (
+            options.min_duration
+            if options.min_duration is not None
+            else self.config["filter"]["min_duration"]
+        )
+        max_d = (
+            options.max_duration
+            if options.max_duration is not None
+            else self.config["filter"]["max_duration"]
+        )
+        mids = [mid] if mid is not None else [u.mid for u in self.repo.list_ups(enabled_only=True)]
+
+        decisions: List[tuple] = []
+        for m in mids:
+            engine = DecisionEngine(min_d, max_d, self.repo.list_blacklist(m))
+            for video in self.repo.list_videos(m):
+                decisions.append((video, engine.decide(video)))
+
+        stats = Counter(d.decision for _, d in decisions)
+        return {
+            "stats": dict(stats),
+            "decisions": decisions,
+            "min_duration": min_d,
+            "max_duration": max_d,
+        }
 
     def set_limit(self, mbps: float) -> float:
         self.limiter.set_rate(mbps_to_bps(mbps))

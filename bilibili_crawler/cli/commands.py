@@ -20,10 +20,12 @@ import argparse
 import sys
 import threading
 import time
+from collections import Counter
 from typing import List, Optional
 
 from .. import __version__
 from ..app import App, check_ffmpeg
+from ..filter.explain import explain
 from ..options import DownloadOptions, MEDIA_TYPES, QUALITY_TO_QN
 
 
@@ -66,6 +68,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_check = sub.add_parser("check", help="check DB vs local files, recover MISSING -> PENDING")
     p_check.add_argument("mid", type=int, nargs="?", default=None)
+
+    p_preview = sub.add_parser("preview", help="preview download decisions (dry-run)")
+    p_preview.add_argument("mid", type=int, nargs="?", default=None)
+    p_preview.add_argument("--quality", choices=list(QUALITY_TO_QN.keys()), default=None)
+    p_preview.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video")
+    p_preview.add_argument("--min-duration", type=int, default=None)
+    p_preview.add_argument("--max-duration", type=int, default=None)
+    p_preview.add_argument("--explain", metavar="BVID", default=None, help="explain a single video")
 
     p_dlbv = sub.add_parser("download-bv", help="download video(s) directly by bvid (bypass UP rules)")
     p_dlbv.add_argument("bvids", nargs="+", help="one or more BV ids")
@@ -206,6 +216,36 @@ def _cmd_check(app: App, mid: Optional[int]) -> int:
     return 0
 
 
+def _cmd_preview(app: App, mid: Optional[int], options: DownloadOptions, explain_bvid: Optional[str]) -> int:
+    result = app.preview(mid, options)
+
+    if explain_bvid:
+        for video, decision in result["decisions"]:
+            if video.bvid == explain_bvid:
+                print(explain(decision, video, result["min_duration"], result["max_duration"]))
+                return 0
+        print(f"video not found: {explain_bvid}")
+        return 1
+
+    stats = result["stats"]
+    filtered = Counter()
+    for _, d in result["decisions"]:
+        if d.decision == "FILTERED":
+            if d.reason.startswith("blacklist"):
+                filtered["BLACKLIST"] += 1
+            else:
+                filtered["DURATION"] += 1
+
+    print(f"READY       {stats.get('READY', 0)}")
+    print(f"DOWNLOADED  {stats.get('DOWNLOADED', 0)}")
+    print(f"MISSING     {stats.get('MISSING', 0)}")
+    print(f"DURATION    {filtered.get('DURATION', 0)}")
+    print(f"BLACKLIST   {filtered.get('BLACKLIST', 0)}")
+    print(f"FAILED      {stats.get('FAILED', 0)}")
+    print(f"DOWNLOADING {stats.get('DOWNLOADING', 0)}")
+    return 0
+
+
 def _cmd_download_bv(app: App, bvids: List[str], options: DownloadOptions) -> int:
     if app.has_ffmpeg is False:
         print("[warn] ffmpeg not found; DASH streams will fall back to progressive.")
@@ -312,6 +352,14 @@ def main(argv: Optional[list] = None) -> int:
             return _cmd_status(app, args.mid)
         if args.command == "check":
             return _cmd_check(app, args.mid)
+        if args.command == "preview":
+            opts = DownloadOptions(
+                quality=args.quality,
+                media_type=args.media_type,
+                min_duration=args.min_duration,
+                max_duration=args.max_duration,
+            )
+            return _cmd_preview(app, args.mid, opts, args.explain)
         if args.command == "blacklist":
             return _cmd_blacklist(app, args.bl_action, args.mid, getattr(args, "keyword", None))
         if args.command == "limit":
