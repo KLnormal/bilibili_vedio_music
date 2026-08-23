@@ -19,7 +19,11 @@ from PySide6.QtTest import QTest
 from bilibili_crawler.app import App
 from bilibili_crawler.bilibili.video import VideoDetail
 from bilibili_crawler.database.models import DownloadStatus, Up, Video
-from bilibili_crawler.desktop.app import BlacklistDialog, MainWindow
+from bilibili_crawler.desktop.app import (
+    BlacklistDialog,
+    MainWindow,
+    _prepare_interactive_qt_platform,
+)
 from bilibili_crawler.options import DownloadOptions
 
 
@@ -78,6 +82,29 @@ class DesktopControlsTest(unittest.TestCase):
         QTest.mouseClick(self.window.tasks.duration_override, Qt.MouseButton.LeftButton)
         self.qt.processEvents()
         self.assertTrue(self.window.tasks.min_duration.isEnabled())
+
+    def test_desktop_window_can_reclaim_foreground_focus(self):
+        """The interactive entry point must not leave a visible window inert."""
+        self.window.activate_for_interaction()
+        self.assertTrue(self.window.isEnabled())
+        self.assertTrue(self.window.isVisible())
+
+    def test_desktop_entry_removes_inherited_headless_qt_platform(self):
+        # Tests themselves use the offscreen Qt plugin, so patch the platform
+        # marker only while exercising the Windows startup guard.
+        with mock.patch("bilibili_crawler.desktop.app.sys.platform", "win32"):
+            with mock.patch.dict(os.environ, {"QT_QPA_PLATFORM": "offscreen"}, clear=False):
+                os.environ.pop("BILIBILI_DESKTOP_HEADLESS", None)
+                _prepare_interactive_qt_platform()
+                self.assertNotIn("QT_QPA_PLATFORM", os.environ)
+
+            with mock.patch.dict(os.environ, {
+                "QT_QPA_PLATFORM": "offscreen",
+                "BILIBILI_DESKTOP_HEADLESS": "1",
+            }, clear=False):
+                _prepare_interactive_qt_platform()
+                self.assertEqual(os.environ.get("QT_QPA_PLATFORM"), "offscreen")
+                os.environ.pop("BILIBILI_DESKTOP_HEADLESS", None)
 
     def test_task_options_default_to_up_or_global_rules(self):
         options = self.window.tasks.options()

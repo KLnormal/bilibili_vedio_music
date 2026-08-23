@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from datetime import datetime
@@ -795,6 +796,22 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self); self.timer.timeout.connect(self.refresh_runtime); self.timer.start(500)
         self.refresh_all()
 
+    def activate_for_interaction(self) -> None:
+        """Bring the native window to the foreground after it is shown.
+
+        Windows may leave a newly-created Qt window behind the shell (or behind
+        the terminal that launched it).  In that state the UI can be painted
+        correctly while the user's first mouse clicks are still delivered to
+        the old foreground window.  Calling this after the event loop starts
+        makes the desktop entry point deterministic without installing a global
+        mouse hook or stealing focus during normal navigation.
+        """
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
+
     def refresh_all(self):
         self.overview.refresh(); self.ups.refresh(); self.tasks.refresh()
 
@@ -842,13 +859,45 @@ QStatusBar { background:#181825; color:#a6adc8; }
 """
 
 
+def _prepare_interactive_qt_platform() -> None:
+    """Ensure the Windows desktop entry point uses a real input platform.
+
+    Returns nothing so it can be called before QApplication is constructed.
+    ``BILIBILI_DESKTOP_HEADLESS=1`` remains an explicit escape hatch for
+    screenshot/CI jobs that intentionally do not need mouse input.
+    """
+    if sys.platform != "win32":
+        return
+    platform = os.environ.get("QT_QPA_PLATFORM", "").strip().lower()
+    allow_headless = os.environ.get("BILIBILI_DESKTOP_HEADLESS", "").strip().lower() in {
+        "1", "true", "yes"
+    }
+    if platform in {"offscreen", "minimal", "minimalegl"} and not allow_headless:
+        os.environ.pop("QT_QPA_PLATFORM", None)
+        print(
+            "[desktop] removed inherited QT_QPA_PLATFORM=%s; interactive Windows UI is enabled."
+            % platform,
+            file=sys.stderr,
+        )
+
+
 def run_desktop(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="bili-crawler desktop")
     parser.add_argument("--config", default=None)
     args = parser.parse_args(argv or [])
+
+    # ``QT_QPA_PLATFORM=offscreen`` is useful for the unit tests, but it also
+    # creates a window that cannot receive real mouse input.  The desktop
+    # command is explicitly an interactive entry point, so on Windows remove
+    # an inherited headless platform selection unless the caller opts in for a
+    # deliberate headless run (for example, screenshot generation in CI).
+    _prepare_interactive_qt_platform()
     qt_app = QApplication.instance() or QApplication(sys.argv)
     app = App(config_path=args.config)
     controller = DesktopController(app)
     window = MainWindow(controller)
     window.show()
+    # The queued call runs after the native HWND exists, which is more reliable
+    # than activating it immediately after ``show()`` on Windows.
+    QTimer.singleShot(0, window.activate_for_interaction)
     return qt_app.exec()

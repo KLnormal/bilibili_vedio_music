@@ -117,7 +117,9 @@ class VideoDownloader:
         base = f"{sanitize_filename(detail.title)} [{detail.bvid}]"
 
         if media_type == "audio":
-            return self._download_audio(detail, playback, save_dir, base, limiter, progress)
+            return self._download_audio(
+                detail, playback, save_dir, base, limiter, progress, effective_qn
+            )
 
         final_path = save_dir / f"{base}.mp4"
 
@@ -149,6 +151,7 @@ class VideoDownloader:
         base: str,
         limiter: RateLimiter,
         progress: Optional[ProgressCallback],
+        qn: int,
     ) -> Path:
         """Download only the audio track, saved as ``.m4a`` (no MP3 transcode)."""
         final_path = save_dir / f"{base}.m4a"
@@ -167,7 +170,7 @@ class VideoDownloader:
                 f"audio download needs ffmpeg (no DASH audio stream for {detail.bvid})"
             )
         fallback = get_playback_info(
-            self.client, detail.bvid, detail.cid, qn=effective_qn, prefer_dash=False
+            self.client, detail.bvid, detail.cid, qn=qn, prefer_dash=False
         )
         stream = pick_best(fallback.progressive_streams)
         if stream is None:

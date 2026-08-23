@@ -11,8 +11,8 @@
 |----|------|
 | 版本 | v0.2.0 |
 | 里程碑 | v0.1.0 十项目标已实现；v0.2.0 八个 Phase **全部完成** |
-| 当前分支 | `main` |
-| 测试 | 核心 + 桌面离线测试 50/50 通过 |
+| 当前分支 | `bilibili_branch_download` |
+| 测试 | 核心 + 桌面 + 下载器离线测试 60/60 通过 |
 | 关键验证 | ✅ 1080P / 4K 下载链路可行（ffprobe 实测） |
 
 ---
@@ -73,13 +73,13 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | bilibili | `bilibili/{client,auth,user,video}.py` | ✅ 稳定 | WBI 签名、风控重试、扫码登录、分页校验与投稿断点 |
 | crawler | `crawler/{user_crawler,video_crawler,scheduler}.py` | ✅ 稳定 | 全量/增量扫描、去重、风控失败断点续扫 |
 | filter | `filter/{duration_filter,blacklist_filter,decision,explain}.py` | ✅ 稳定 | 时长/黑名单规则 + 统一决策器 + 规则解释 |
-| downloader | `downloader/{limiter,downloader,task_manager}.py` | ✅ 稳定 | 令牌桶限速、DASH+ffmpeg 合并、状态机 |
+| downloader | `downloader/{limiter,downloader,task_manager}.py` | ✅ 稳定 | 令牌桶限速、DASH+ffmpeg 合并、progressive/audio fallback、状态机 |
 | cli | `cli/{commands,tui,keyreader}.py` | ✅ 稳定 | 新增 `download-bv`/`status`/`check` |
 | state | `state.py` | ✅ 稳定 | 线程安全共享运行状态 |
 | app | `app.py` | ✅ 稳定 | 新增 `status`/`check_files`/`download_bv` |
 | options | `options.py` | ✅ 稳定 | `DownloadOptions` 统一参数对象 + 质量映射 |
-| tests | `tests/{test_core,e2e_demo,test_desktop}.py` | ✅ 稳定 | 核心、分页续扫与桌面离线测试 |
-| desktop | `desktop/{app,controller,workers}.py` | ✅ 首版完成 | PySide6 工作台、UP 级筛选、后台任务、登录与设置 |
+| tests | `tests/{test_core,test_downloader,e2e_demo,test_desktop}.py` | ✅ 稳定 | 核心、分页续扫、下载器模式与桌面交互离线测试 |
+| desktop | `desktop/{app,controller,workers}.py` | ✅ 稳定 | PySide6 工作台、UP 级筛选、后台任务、登录与设置；Windows 前台激活与可交互平台保护 |
 
 ---
 
@@ -95,6 +95,8 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | `b344479` | 清晰度档位越级 | `pick_best` 选码率最高的流，请求 1080p+ 会拿到 4K → 新增 `pick_best_leq()` 限制在请求档位内 |
 | 近期 | 扫描只拿到「最近一小段」投稿 | `build_video` 轻量化、翻页风险重试、owner.mid 校验、重复页保护；风控失败保存 `scan_next_page`，下次 scan 从失败页继续。注意：实测 2640 只是第 88 页被拦截前的已扫描数量，不代表完整历史总数。 |
 | 2026-08-24 | 旧库残缺记录触发增量短路 | 新增 `scan_complete`；旧库默认为未完成，先全量补扫再启用增量扫描。 |
+| 2026-08-24 | Windows 桌面窗口看得到但无法点击 | 桌面启动时清除继承的 `QT_QPA_PLATFORM=offscreen/minimal`，并在原生窗口创建后提升到前台、激活焦点；`BILIBILI_DESKTOP_HEADLESS=1` 可显式保留无头模式。 |
+| 2026-08-24 | 音频无 DASH fallback 使用未定义清晰度 | 将本次任务的有效 qn 传入音频 fallback，并补齐 progressive/DASH/audio 离线覆盖。 |
 
 ---
 
