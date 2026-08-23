@@ -8,11 +8,15 @@
 ## 启动
 
 ```powershell
-python main.py desktop
-python main.py desktop --config path\to\config.yaml
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py desktop
+.\.venv\Scripts\python.exe main.py desktop --config path\to\config.yaml
 ```
 
-首次使用需要在项目虚拟环境安装 `requirements.txt` 中的 PySide6。无参数运行
+Windows 上建议使用项目目录内的虚拟环境。直接安装到 Python Store 的全局用户
+目录时，PySide6 的深层 QML 路径可能触发 Windows 长路径限制（`Errno 2`）。
+若虚拟环境已激活，也可以简写为 `python main.py desktop`。无参数运行
 `python main.py` 仍启动原有 TUI。
 
 ## 页面
