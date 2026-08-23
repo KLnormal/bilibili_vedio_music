@@ -49,8 +49,6 @@ class ThumbnailRunnable(QRunnable):
     def run(self) -> None:
         from pathlib import Path
 
-        from PySide6.QtGui import QPixmap
-
         path = Path(self.cache_path)
         try:
             if not path.is_file():
@@ -64,8 +62,8 @@ class ThumbnailRunnable(QRunnable):
                 response.raise_for_status()
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(response.content)
-            pixmap = QPixmap()
-            pixmap.load(str(path))
-            self.signals.ready.emit(self.url, pixmap)
+            # QPixmap is GUI-thread bound on Windows.  Only read bytes here;
+            # the receiving slot constructs the pixmap on the Qt GUI thread.
+            self.signals.ready.emit(self.url, path.read_bytes())
         except Exception:
-            self.signals.ready.emit(self.url, QPixmap())
+            self.signals.ready.emit(self.url, b"")

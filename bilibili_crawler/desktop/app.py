@@ -172,12 +172,15 @@ class VideoTable(QTableWidget):
         self.setColumnWidth(1, 300)
         self.setColumnWidth(2, 140)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._thumbs = {}
+        self._thumb_requested = set()
+        self._row_pic_urls = {}
+        self.verticalScrollBar().valueChanged.connect(self._load_visible_thumbnails)
 
     def load(self, videos) -> None:
         self.setSortingEnabled(False)
+        self._thumb_requested.clear()
+        self._row_pic_urls = {}
         self.setRowCount(len(videos))
-        cache_root = Path(self.controller.app.config["download"]["save_root"]) / ".thumb_cache"
         for row, video in enumerate(videos):
             cover = _item("加载中" if video.pic else "-")
             if video.pic:
@@ -192,26 +195,48 @@ class VideoTable(QTableWidget):
             self.setItem(row, 6, _item(video.filter_reason or video.download_error or ""))
             self.setItem(row, 7, _item(video.download_path or ""))
             if video.pic:
-                import hashlib
-                cache = cache_root / f"{hashlib.sha1(video.pic.encode()).hexdigest()}.jpg"
-                runnable = ThumbnailRunnable(video.pic, str(cache))
-                runnable.signals.ready.connect(self._thumbnail_ready)
-                from PySide6.QtCore import QThreadPool
-                QThreadPool.globalInstance().start(runnable)
+                self._row_pic_urls[row] = video.pic
         self.setSortingEnabled(True)
+        QTimer.singleShot(0, self._load_visible_thumbnails)
 
-    def _thumbnail_ready(self, url: str, pixmap: QPixmap) -> None:
-        if pixmap.isNull():
+    def _load_visible_thumbnails(self, *_args) -> None:
+        if not self._row_pic_urls:
             return
+        first = self.rowAt(0)
+        last = self.rowAt(max(0, self.viewport().height() - 1))
+        if first < 0:
+            first = 0
+        if last < first:
+            last = min(self.rowCount() - 1, first + 12)
+        for row in range(max(0, first - 2), min(self.rowCount(), last + 3)):
+            url = self._row_pic_urls.get(row)
+            if not url or url in self._thumb_requested:
+                continue
+            self._thumb_requested.add(url)
+            import hashlib
+            cache_root = Path(self.controller.app.config["download"]["save_root"]) / ".thumb_cache"
+            cache = cache_root / f"{hashlib.sha1(url.encode()).hexdigest()}.jpg"
+            runnable = ThumbnailRunnable(url, str(cache))
+            runnable.signals.ready.connect(self._thumbnail_ready)
+            from PySide6.QtCore import QThreadPool
+            QThreadPool.globalInstance().start(runnable)
+
+    def _thumbnail_ready(self, url: str, data: bytes) -> None:
+        pixmap = QPixmap()
+        if data:
+            pixmap.loadFromData(data)
         for row in range(self.rowCount()):
             text = self.item(row, 0)
             # URLs are not stored in the item; use the title row's image only
             # when the asynchronous request completed successfully. The cache
             # is still useful on the next refresh, where this assignment repeats.
             if text and text.text() == "加载中" and text.data(Qt.ItemDataRole.UserRole) == url:
-                text.setText("")
-                text.setIcon(QIcon(pixmap.scaled(72, 42, Qt.AspectRatioMode.KeepAspectRatio,
-                                                  Qt.TransformationMode.SmoothTransformation)))
+                if pixmap.isNull():
+                    text.setText("封面失败")
+                else:
+                    text.setText("")
+                    text.setIcon(QIcon(pixmap.scaled(72, 42, Qt.AspectRatioMode.KeepAspectRatio,
+                                                      Qt.TransformationMode.SmoothTransformation)))
                 break
 
 
