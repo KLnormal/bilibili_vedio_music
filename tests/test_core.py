@@ -123,6 +123,8 @@ class ScanResumeTest(unittest.TestCase):
             self.app.crawler.crawl_up(7)
         up = self.app.repo.get_up(7)
         self.assertEqual((up.scan_next_page, up.scan_incomplete), (5, True))
+        self.assertFalse(self.app.state.snapshot().scan_active)
+        self.assertIn("扫描暂停", self.app.state.snapshot().scan_status)
 
         starts = []
         def resumed(_client, _mid, **kwargs):
@@ -138,6 +140,7 @@ class ScanResumeTest(unittest.TestCase):
         up = self.app.repo.get_up(7)
         self.assertEqual((up.scan_next_page, up.scan_incomplete), (1, False))
         self.assertTrue(self.app.repo.video_exists("BVresume"))
+        self.assertEqual(self.app.state.snapshot().scan_status, "扫描完成")
 
 
 class RateLimiterTest(unittest.TestCase):
