@@ -45,6 +45,16 @@ class ThumbnailRunnable(QRunnable):
         self.cache_path = cache_path
         self.signals = ThumbnailSignals()
 
+    def _emit_ready(self, data: bytes) -> None:
+        # The window may close while a thumbnail request is still running.
+        # Qt then destroys the signal source before QRunnable::run returns;
+        # silently drop the result instead of printing an exception from the
+        # worker thread during application shutdown.
+        try:
+            self.signals.ready.emit(self.url, data)
+        except RuntimeError:
+            pass
+
     @Slot()
     def run(self) -> None:
         from pathlib import Path
@@ -64,6 +74,6 @@ class ThumbnailRunnable(QRunnable):
                 path.write_bytes(response.content)
             # QPixmap is GUI-thread bound on Windows.  Only read bytes here;
             # the receiving slot constructs the pixmap on the Qt GUI thread.
-            self.signals.ready.emit(self.url, path.read_bytes())
+            self._emit_ready(path.read_bytes())
         except Exception:
-            self.signals.ready.emit(self.url, b"")
+            self._emit_ready(b"")
