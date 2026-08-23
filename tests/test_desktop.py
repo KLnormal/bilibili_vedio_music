@@ -89,6 +89,19 @@ class DesktopControlsTest(unittest.TestCase):
         self.assertTrue(self.window.isEnabled())
         self.assertTrue(self.window.isVisible())
 
+    def test_video_search_filters_rows_without_rebuilding_the_table(self):
+        self.app.repo.insert_video(Video(bvid="BVmatch", mid=1, title="目标视频"))
+        self.app.repo.insert_video(Video(bvid="BVother", mid=1, title="另一个视频"))
+        tasks = self.window.tasks
+        tasks.refresh()
+        self.assertEqual(tasks.table.rowCount(), 2)
+        tasks.search.setText("BVmatch")
+        self.qt.processEvents()
+        visible = [
+            not tasks.table.isRowHidden(row) for row in range(tasks.table.rowCount())
+        ]
+        self.assertEqual(visible, [True, False])
+
     def test_desktop_entry_removes_inherited_headless_qt_platform(self):
         # Tests themselves use the offscreen Qt plugin, so patch the platform
         # marker only while exercising the Windows startup guard.
