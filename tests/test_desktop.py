@@ -12,6 +12,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import yaml
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 
 from bilibili_crawler.app import App
 from bilibili_crawler.database.models import Up, Video
@@ -34,6 +36,8 @@ class DesktopControlsTest(unittest.TestCase):
         self.app = App(str(self.config), configure_logging=False)
         self.app.repo.upsert_up(Up(mid=1, name="测试 UP"))
         self.window = MainWindow(self.app_controller())
+        self.window.show()
+        self.qt.processEvents()
 
     def app_controller(self):
         from bilibili_crawler.desktop.controller import DesktopController
@@ -60,6 +64,17 @@ class DesktopControlsTest(unittest.TestCase):
         self.assertEqual((options.min_date, options.max_date), ("2025.01.01", "2025.12.31"))
         self.assertTrue(options.date_filter_active)
         self.assertEqual((options.quality, options.media_type), ("1080p+", "audio"))
+
+    def test_navigation_and_filter_controls_accept_mouse_clicks(self):
+        from PySide6.QtWidgets import QPushButton
+        nav = next(button for button in self.window.findChildren(QPushButton)
+                   if button.text() == "任务与视频")
+        QTest.mouseClick(nav, Qt.MouseButton.LeftButton)
+        self.qt.processEvents()
+        self.assertIs(self.window.pages.currentWidget(), self.window.tasks)
+        QTest.mouseClick(self.window.tasks.duration_override, Qt.MouseButton.LeftButton)
+        self.qt.processEvents()
+        self.assertTrue(self.window.tasks.min_duration.isEnabled())
 
     def test_task_options_default_to_up_or_global_rules(self):
         options = self.window.tasks.options()
