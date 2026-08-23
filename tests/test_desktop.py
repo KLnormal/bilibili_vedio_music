@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -66,6 +67,25 @@ class DesktopControlsTest(unittest.TestCase):
         self.assertIsNone(options.max_duration)
         self.assertIsNone(options.min_date)
         self.assertFalse(options.date_filter_active)
+
+    def test_task_options_are_used_by_preview_rules(self):
+        created = int(datetime(2025, 6, 1).timestamp())
+        self.app.repo.insert_video(Video(
+            bvid="BVok", mid=1, title="符合条件", duration=180, created=created,
+        ))
+        self.app.repo.insert_video(Video(
+            bvid="BVlong", mid=1, title="时长过长", duration=900, created=created,
+        ))
+        tasks = self.window.tasks
+        tasks.duration_override.setChecked(True)
+        tasks.min_duration.setValue(120)
+        tasks.max_duration.setValue(600)
+        tasks.date_override.setChecked(True)
+        tasks.min_date.setText("2025.01.01")
+        tasks.max_date.setText("2025.12.31")
+        result = self.app.preview(1, tasks.options())
+        self.assertEqual(result["stats"].get("READY"), 1)
+        self.assertEqual(result["stats"].get("FILTERED"), 1)
 
     def test_blacklist_has_dedicated_up_dialog(self):
         dialog = BlacklistDialog(self.window.controller, 1)
