@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterator, List, Optional
 
+import time
+
 from .client import BilibiliClient, BilibiliError
 
 
@@ -61,36 +63,49 @@ def iter_submissions(
     *,
     page_size: int = 30,
     max_pages: Optional[int] = None,
+    page_retries: int = 3,
+    page_backoff: float = 20.0,
 ) -> Iterator[VideoListItem]:
     """Yield submission-list items newest-first, page by page.
 
     ``max_pages`` optionally caps the scan (used by tests / manual runs).
+
+    Deep pagination on the space endpoint is risk-controlled: when a page is
+    rejected (412 / -352 / -799) we wait ``page_backoff`` seconds and retry the
+    same page up to ``page_retries`` extra times, so a scan can push further
+    into the UP's history instead of stopping after the first few pages.
     """
     page = 1
     while True:
         if max_pages is not None and page > max_pages:
             return
-        try:
-            params = {
-                "mid": mid,
-                "ps": page_size,
-                "pn": page,
-                "order": "pubdate",
-                "tid": 0,
-                "keyword": "",
-                "platform": "web",
-                "order_avoided": "true",
-            }
-            params.update(client.anticrawl_params())
-            data = client.get_json(
-                f"{BilibiliClient.BASE}/x/space/wbi/arc/search",
-                params=params,
-                wbi=True,
-            )
-        except BilibiliError:
-            # A failed page is reported as an error to the caller, who decides
-            # whether to stop the incremental scan.
-            raise
+        data = None
+        for attempt in range(page_retries + 1):
+            try:
+                params = {
+                    "mid": mid,
+                    "ps": page_size,
+                    "pn": page,
+                    "order": "pubdate",
+                    "tid": 0,
+                    "keyword": "",
+                    "platform": "web",
+                    "order_avoided": "true",
+                }
+                params.update(client.anticrawl_params())
+                data = client.get_json(
+                    f"{BilibiliClient.BASE}/x/space/wbi/arc/search",
+                    params=params,
+                    wbi=True,
+                )
+                break
+            except BilibiliError:
+                if attempt < page_retries:
+                    time.sleep(page_backoff)
+                    continue
+                # Retries exhausted: surface the error so the caller can decide
+                # to stop (the videos already scanned are kept).
+                raise
 
         if not isinstance(data, dict):
             return

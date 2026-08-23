@@ -91,6 +91,11 @@ class RuntimeState:
         with self._lock:
             self._stopped = True
 
+    def reset_stop(self) -> None:
+        """Clear a user-requested stop so another desktop task can run."""
+        with self._lock:
+            self._stopped = False
+
     # -------------------------------------------------------------- logging --
     def log(self, message: str) -> None:
         with self._lock:

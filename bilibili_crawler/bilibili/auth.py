@@ -141,19 +141,53 @@ class LoginManager:
                 return "cookie"
 
     # ------------------------------------------------------------ QR login --
-    def _login_qrcode(self) -> bool:
-        try:
-            data = self.client.get_json(
-                f"{BilibiliClient.PASSPORT}/x/passport-login/web/qrcode/generate"
-            )
-        except BilibiliError as exc:
-            self.console.print(f"[red]无法获取登录二维码：{exc}[/red]")
-            return False
-
+    def request_qrcode(self) -> tuple[str, str, list[list[bool]]]:
+        """Return ``(url, key, matrix)`` for GUI or CLI consumers."""
+        data = self.client.get_json(
+            f"{BilibiliClient.PASSPORT}/x/passport-login/web/qrcode/generate"
+        )
         qrcode_key = data.get("qrcode_key")
         qr_url = data.get("url")
         if not qrcode_key or not qr_url:
-            self.console.print("[red]登录二维码响应缺失字段。[/red]")
+            raise BilibiliError("登录二维码响应缺失字段")
+        qr = qrcode.QRCode(border=1)
+        qr.add_data(qr_url)
+        qr.make(fit=True)
+        return qr_url, qrcode_key, qr.get_matrix()
+
+    def poll_qrcode_once(self, qrcode_key: str) -> tuple[bool, str]:
+        """Poll once, returning ``(success, status)`` without terminal I/O."""
+        resp = self.client.request(
+            "GET",
+            f"{BilibiliClient.PASSPORT}/x/passport-login/web/qrcode/poll",
+            params={"qrcode_key": qrcode_key},
+        )
+        data = resp.json()
+        code = data.get("code", -1)
+        if code == 0:
+            url = data.get("data", {}).get("url")
+            if url:
+                try:
+                    self.client.request("GET", url, allow_redirects=True)
+                except BilibiliError:
+                    pass
+            if self.is_logged_in:
+                self.save_cookies()
+                return True, "登录成功"
+            return False, "已确认，正在完成登录..."
+        if code == 86038:
+            return False, "expired"
+        if code == 86090:
+            return False, "已扫码，请在手机上确认登录..."
+        if code == 86101:
+            return False, "等待扫码..."
+        return False, data.get("message", "登录状态未知")
+
+    def _login_qrcode(self) -> bool:
+        try:
+            qr_url, qrcode_key, _matrix = self.request_qrcode()
+        except BilibiliError as exc:
+            self.console.print(f"[red]无法获取登录二维码：{exc}[/red]")
             return False
 
         self._print_qrcode(qr_url)
@@ -163,7 +197,20 @@ class LoginManager:
         # Poll for the scan result. This is the "human intervention" pause:
         # the automated flow blocks until the user finishes verification.
         try:
-            return self._poll_qrcode(qrcode_key)
+            deadline = time.time() + 180
+            while time.time() < deadline:
+                ok, status = self.poll_qrcode_once(qrcode_key)
+                if status == "expired":
+                    self.console.print("[yellow]二维码已过期，请重新登录。[/yellow]")
+                    return False
+                if status not in {"等待扫码...", "已确认，正在完成登录..."}:
+                    self.console.print(status)
+                if ok:
+                    self.console.print("[green]登录成功。[/green]")
+                    return True
+                time.sleep(1.5)
+            self.console.print("[yellow]登录超时。[/yellow]")
+            return False
         except BilibiliError as exc:
             self.console.print(f"[red]登录失败：{exc}[/red]")
             return False

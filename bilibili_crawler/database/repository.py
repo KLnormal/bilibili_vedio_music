@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Iterable, List, Optional
 
 from .database import Database
-from .models import DownloadStatus, Up, Video
+from .models import DownloadStatus, Up, UpFilterSettings, Video
 
 
 def _now_iso() -> str:
@@ -232,6 +232,15 @@ class Repository:
                 (reason, bvid),
             )
 
+    def set_pending(self, bvid: str) -> None:
+        """Return a previously filtered video to the download queue."""
+        with self._lock:
+            self._db.connection.execute(
+                "UPDATE video SET download_status = 'PENDING', filter_reason = '' "
+                "WHERE bvid = ?",
+                (bvid,),
+            )
+
     def list_videos(self, mid: Optional[int] = None) -> List[Video]:
         query = "SELECT * FROM video"
         params: list = []
@@ -354,3 +363,34 @@ class Repository:
                 "SELECT keyword FROM up_blacklist WHERE mid = ? ORDER BY id", (mid,)
             ).fetchall()
         return [r["keyword"] for r in rows]
+
+    # ---------------------------------------------------------- UP filters --
+    def get_up_filter_settings(self, mid: int) -> UpFilterSettings:
+        with self._lock:
+            row = self._db.connection.execute(
+                "SELECT * FROM up_filter_settings WHERE mid = ?", (mid,)
+            ).fetchone()
+        if row is None:
+            return UpFilterSettings(mid=mid)
+        return UpFilterSettings(
+            mid=mid,
+            min_duration=row["min_duration"],
+            max_duration=row["max_duration"],
+            min_date=row["min_date"],
+            max_date=row["max_date"],
+        )
+
+    def upsert_up_filter_settings(self, settings: UpFilterSettings) -> None:
+        with self._lock:
+            self._db.connection.execute(
+                """INSERT INTO up_filter_settings
+                   (mid, min_duration, max_duration, min_date, max_date)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(mid) DO UPDATE SET
+                   min_duration=excluded.min_duration,
+                   max_duration=excluded.max_duration,
+                   min_date=excluded.min_date,
+                   max_date=excluded.max_date""",
+                (settings.mid, settings.min_duration, settings.max_duration,
+                 settings.min_date, settings.max_date),
+            )

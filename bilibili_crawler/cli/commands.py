@@ -110,6 +110,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--mid", type=int, default=None)
     p_run.add_argument("--once", action="store_true", help="single scan pass then exit")
 
+    p_desktop = sub.add_parser("desktop", help="launch the PySide6 desktop workbench")
+    p_desktop.add_argument("--config", dest="desktop_config", default=None,
+                           help="path to a config.yaml override")
+
     return parser
 
 
@@ -329,6 +333,10 @@ def _cmd_run(app: App, mid: Optional[int], once: bool) -> int:
 
 def main(argv: Optional[list] = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    if args.command == "desktop":
+        from ..desktop import run_desktop
+        return run_desktop(["--config", args.desktop_config] if args.desktop_config else [])
 
     app = App(config_path=args.config)
 

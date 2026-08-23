@@ -12,7 +12,7 @@
 | 版本 | v0.2.0 |
 | 里程碑 | v0.1.0 十项目标已实现；v0.2.0 八个 Phase **全部完成** |
 | 当前分支 | `main` |
-| 测试 | 离线单测 32/32 通过 |
+| 测试 | 核心 + 桌面离线测试 45/45 通过 |
 | 关键验证 | ✅ 1080P / 4K 下载链路可行（ffprobe 实测） |
 
 ---
@@ -78,7 +78,8 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | state | `state.py` | ✅ 稳定 | 线程安全共享运行状态 |
 | app | `app.py` | ✅ 稳定 | 新增 `status`/`check_files`/`download_bv` |
 | options | `options.py` | ✅ 稳定 | `DownloadOptions` 统一参数对象 + 质量映射 |
-| tests | `tests/{test_core,e2e_demo}.py` | ✅ 稳定 | 18 个离线单测 |
+| tests | `tests/{test_core,e2e_demo,test_desktop}.py` | ✅ 稳定 | 核心与桌面离线测试 |
+| desktop | `desktop/{app,controller,workers}.py` | ✅ 首版完成 | PySide6 工作台、UP 级筛选、后台任务、登录与设置 |
 
 ---
 
@@ -92,6 +93,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | `8869869` | `download` 命令提前退出 | 只看 PENDING 忽略 DOWNLOADING → 等待二者均清零 |
 | `edc8479` | 下载 worker 抢占竞态 + mid 过滤失效 | 原子认领 `claim_next_pending()` + `set_mid()` |
 | `b344479` | 清晰度档位越级 | `pick_best` 选码率最高的流，请求 1080p+ 会拿到 4K → 新增 `pick_best_leq()` 限制在请求档位内 |
+| 近期 | 扫描只拿到「最近一小段」投稿 | 根因：每新视频调 view API（400+ 请求）触发风控卡死扫描 → ① `build_video` 轻量化为纯列表数据（不调 view）② 翻页遇 412 等待重试（20s×3）③ client 412 长退避+cookie 刷新。实测花譜_kaf 从「最近几十个」提升到**入库 2640 个**（直到 88 页才被深层风控拦截）。下载时再按需调 view 补 cid/description |
 
 ---
 

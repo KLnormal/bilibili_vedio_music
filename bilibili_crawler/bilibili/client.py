@@ -128,16 +128,19 @@ class BilibiliClient:
                     allow_redirects=allow_redirects,
                 )
                 if resp.status_code == 412:
-                    # Frequently indicates a missing/expired WBI signature or a
-                    # rate limit. Retry after a short pause.
-                    raise BilibiliError("HTTP 412 (rate limited or bad signature)")
+                    # Risk control (deep pagination on space endpoints). Use a
+                    # longer backoff so the scan can push further into history.
+                    raise BilibiliError("HTTP 412 (risk control)")
                 if resp.status_code >= 500:
                     raise BilibiliError(f"HTTP {resp.status_code} (server error)")
                 return resp
             except (requests.RequestException, BilibiliError) as exc:  # noqa: PERF203
                 last_exc = exc
                 if attempt < self.retries - 1:
-                    time.sleep(self.retry_backoff * (2 ** attempt))
+                    if isinstance(exc, BilibiliError) and "412" in str(exc):
+                        time.sleep(5 * (attempt + 1))  # 5s / 10s / 15s
+                    else:
+                        time.sleep(self.retry_backoff * (2 ** attempt))
         raise BilibiliError(
             f"request failed after {self.retries} attempts: {last_exc}"
         )
@@ -177,7 +180,14 @@ class BilibiliClient:
                     ) from exc
             except BilibiliError as exc:
                 last_exc = exc
-                time.sleep(self.retry_backoff * (2 ** attempt))
+                if "412" in str(exc):
+                    # Deep-pagination risk control: refresh device cookies and
+                    # the WBI keys, then back off longer before retrying.
+                    self._cookies_ready = False
+                    self._wbi_keys = None
+                    time.sleep(5 * (attempt + 1))
+                else:
+                    time.sleep(self.retry_backoff * (2 ** attempt))
                 continue
 
             code = data.get("code", -1)

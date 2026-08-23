@@ -6,15 +6,15 @@ Crawling follows the plan:
 * Later crawls scan newest-first and stop early after ``stop_after_existing``
   consecutive videos that already exist in the database (incremental scan).
 * ``bvid`` is the unique video identity (SQLite PRIMARY KEY / UNIQUE).
-* Discovered videos are enriched with the ``view`` API (duration/description),
-  then filtered by duration: eligible -> PENDING, ineligible -> FILTERED.
-* A single video/detail failure never crashes the whole UP task.
+* Discovered videos are built from submission-list data (no per-video view API
+  call), then filtered by duration: eligible -> PENDING, ineligible -> FILTERED.
+* The download stage enriches metadata (description/cid) on demand.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from ..bilibili.client import BilibiliClient, BilibiliError
 from ..bilibili.user import get_up_profile, iter_submissions
@@ -48,6 +48,7 @@ class UserCrawler:
         max_pages: Optional[int] = None,
         stop_after_existing: int = 10,
         request_interval: float = 0.3,
+        duration_filter_for_mid: Optional[Callable[[int], DurationFilter]] = None,
     ):
         self.client = client
         self.repo = repo
@@ -57,6 +58,7 @@ class UserCrawler:
         self.max_pages = max_pages
         self.stop_after_existing = stop_after_existing
         self.request_interval = request_interval
+        self.duration_filter_for_mid = duration_filter_for_mid
 
     # ------------------------------------------------------------------ add --
     def add_up(self, mid: int) -> Up:
@@ -79,6 +81,11 @@ class UserCrawler:
             up = self.add_up(mid)
 
         stats = CrawlStats()
+        duration_filter = (
+            self.duration_filter_for_mid(mid)
+            if self.duration_filter_for_mid is not None
+            else self.duration_filter
+        )
         first_crawl = up.first_crawl_time is None
 
         # Refresh profile on every crawl (name/face/sign may change).
@@ -117,19 +124,13 @@ class UserCrawler:
                     continue
 
                 consecutive_existing = 0
-                try:
-                    video = build_video(
-                        self.client, item, mid, request_interval=self.request_interval
-                    )
-                except BilibiliError as exc:
-                    logger.warning("detail fetch failed for %s: %s", item.bvid, exc)
-                    stats.failed += 1
-                    self.state.log(f"元数据获取失败 {item.bvid}: {exc}")
-                    continue
+                # 轻量入库：只用投稿列表数据（时长/发布时间），不调 view API，
+                # 大幅减少请求、降低风控压力，让翻页能深入获取全部历史投稿。
+                video = build_video(item, mid)
 
-                self._save_new(video)
+                self._save_new(video, duration_filter)
                 stats.new += 1
-                if self.duration_filter.is_eligible(video.duration):
+                if duration_filter.is_eligible(video.duration):
                     stats.eligible += 1
                 else:
                     stats.filtered += 1
@@ -161,8 +162,9 @@ class UserCrawler:
             video.update_time = _now_iso()
             self.repo.update_video_meta(video)
 
-    def _save_new(self, video: Video) -> None:
-        if self.duration_filter.is_eligible(video.duration):
+    def _save_new(self, video: Video, duration_filter: Optional[DurationFilter] = None) -> None:
+        duration_filter = duration_filter or self.duration_filter
+        if duration_filter.is_eligible(video.duration):
             video.download_status = DownloadStatus.PENDING
         else:
             video.download_status = DownloadStatus.FILTERED

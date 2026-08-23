@@ -39,6 +39,17 @@ class Up:
 
 
 @dataclass
+class UpFilterSettings:
+    """Per-UP filtering defaults; None means inherit global config."""
+
+    mid: int
+    min_duration: Optional[int] = None
+    max_duration: Optional[int] = None
+    min_date: Optional[str] = None
+    max_date: Optional[str] = None
+
+
+@dataclass
 class Video:
     bvid: str
     mid: int

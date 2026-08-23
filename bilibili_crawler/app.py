@@ -19,14 +19,14 @@ from .config.configuration import load_config, resolve_cookie_path, resolve_data
 from .crawler.scheduler import Scheduler
 from .crawler.user_crawler import CrawlStats, UserCrawler
 from .database.database import Database
-from .database.models import DownloadStatus, Up
+from .database.models import DownloadStatus, Up, UpFilterSettings
 from .database.repository import Repository
 from .downloader.downloader import VideoDownloader
 from .downloader.limiter import RateLimiter, mbps_to_bps
 from .downloader.task_manager import DownloadTaskManager
 from .filter.decision import DecisionEngine
 from .filter.duration_filter import DurationFilter
-from .options import DownloadOptions
+from .options import DownloadOptions, parse_date
 from .state import RuntimeState
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,7 @@ class App:
     """Root object holding configuration and all subsystems."""
 
     def __init__(self, config_path: Optional[str] = None, configure_logging: bool = True):
+        self.config_path = Path(config_path).resolve() if config_path else Path.cwd() / "config.yaml"
         self.config = load_config(config_path)
         if configure_logging:
             self._setup_logging()
@@ -79,6 +80,7 @@ class App:
             max_pages=c.get("max_pages", 0) or None,
             stop_after_existing=c["stop_after_existing"],
             request_interval=c["request_interval"],
+            duration_filter_for_mid=self.get_duration_filter,
         )
 
         # --- downloader -----------------------------------------------------
@@ -243,6 +245,22 @@ class App:
     def list_blacklist(self, mid: int) -> List[str]:
         return self.repo.list_blacklist(mid)
 
+    def get_up_filter_settings(self, mid: int) -> UpFilterSettings:
+        return self.repo.get_up_filter_settings(mid)
+
+    def get_duration_filter(self, mid: int) -> DurationFilter:
+        settings = self.repo.get_up_filter_settings(mid)
+        return DurationFilter(
+            settings.min_duration if settings.min_duration is not None else self.config["filter"]["min_duration"],
+            settings.max_duration if settings.max_duration is not None else self.config["filter"]["max_duration"],
+        )
+
+    def save_up_filter_settings(self, settings: UpFilterSettings) -> None:
+        if settings.min_duration is not None and settings.max_duration is not None:
+            DurationFilter(settings.min_duration, settings.max_duration)
+        self.repo.upsert_up_filter_settings(settings)
+        self.state.log(f"UP {settings.mid} 筛选规则已保存")
+
     def prepare_download(self, mid: Optional[int], options: DownloadOptions) -> Dict[str, int]:
         """Re-evaluate rules for PENDING videos, applying CLI overrides.
 
@@ -251,29 +269,26 @@ class App:
         then only consumes READY (PENDING) videos. ``mid=None`` applies to all
         enabled UPs, each with its own blacklist.
         """
-        min_d = (
-            options.min_duration
-            if options.min_duration is not None
-            else self.config["filter"]["min_duration"]
-        )
-        max_d = (
-            options.max_duration
-            if options.max_duration is not None
-            else self.config["filter"]["max_duration"]
-        )
-        min_date = options.min_datetime
-        max_date = options.max_datetime
         mids = [mid] if mid is not None else [u.mid for u in self.repo.list_ups(enabled_only=True)]
 
         counts: Dict[str, int] = {"ready": 0, "filtered": 0}
         for m in mids:
+            settings = self.repo.get_up_filter_settings(m)
+            min_d = options.min_duration if options.min_duration is not None else (settings.min_duration if settings.min_duration is not None else self.config["filter"]["min_duration"])
+            max_d = options.max_duration if options.max_duration is not None else (settings.max_duration if settings.max_duration is not None else self.config["filter"]["max_duration"])
+            min_date = options.min_datetime if options.date_filter_active else parse_date(settings.min_date)
+            max_date = options.max_datetime if options.date_filter_active else parse_date(settings.max_date)
             engine = DecisionEngine(
                 min_d, max_d, self.repo.list_blacklist(m),
                 min_date=min_date, max_date=max_date,
             )
-            for video in self.repo.list_pending(m):
+            for video in self.repo.list_videos(m):
+                if video.download_status not in (DownloadStatus.PENDING, DownloadStatus.FILTERED):
+                    continue
                 decision = engine.decide(video)
                 if decision.decision == "READY":
+                    if video.download_status is DownloadStatus.FILTERED:
+                        self.repo.set_pending(video.bvid)
                     counts["ready"] += 1
                 elif decision.decision == "FILTERED":
                     self.repo.set_filtered(video.bvid, decision.reason)
@@ -286,22 +301,15 @@ class App:
         Returns decision statistics plus the full (video, decision) list so the
         CLI/TUI can show both aggregate counts and per-video explanations.
         """
-        min_d = (
-            options.min_duration
-            if options.min_duration is not None
-            else self.config["filter"]["min_duration"]
-        )
-        max_d = (
-            options.max_duration
-            if options.max_duration is not None
-            else self.config["filter"]["max_duration"]
-        )
-        min_date = options.min_datetime
-        max_date = options.max_datetime
         mids = [mid] if mid is not None else [u.mid for u in self.repo.list_ups(enabled_only=True)]
 
         decisions: List[tuple] = []
         for m in mids:
+            settings = self.repo.get_up_filter_settings(m)
+            min_d = options.min_duration if options.min_duration is not None else (settings.min_duration if settings.min_duration is not None else self.config["filter"]["min_duration"])
+            max_d = options.max_duration if options.max_duration is not None else (settings.max_duration if settings.max_duration is not None else self.config["filter"]["max_duration"])
+            min_date = options.min_datetime if options.date_filter_active else parse_date(settings.min_date)
+            max_date = options.max_datetime if options.date_filter_active else parse_date(settings.max_date)
             engine = DecisionEngine(
                 min_d, max_d, self.repo.list_blacklist(m),
                 min_date=min_date, max_date=max_date,
@@ -313,14 +321,29 @@ class App:
         return {
             "stats": dict(stats),
             "decisions": decisions,
-            "min_duration": min_d,
-            "max_duration": max_d,
+            "min_duration": options.min_duration if options.min_duration is not None else self.config["filter"]["min_duration"],
+            "max_duration": options.max_duration if options.max_duration is not None else self.config["filter"]["max_duration"],
         }
 
     def set_limit(self, mbps: float) -> float:
         self.limiter.set_rate(mbps_to_bps(mbps))
         self.state.log(f"下载限速已调整为 {mbps} MB/s")
         return mbps
+
+    def apply_runtime_config(self, config: dict) -> None:
+        """Apply settings that can safely change while the desktop is open."""
+        self.config = config
+        f = config["filter"]
+        self.duration_filter = DurationFilter(f["min_duration"], f["max_duration"])
+        self.crawler.duration_filter = self.duration_filter
+        self.crawler.request_interval = float(config["crawler"].get("request_interval", 0.3))
+        dl = config["download"]
+        self.set_limit(float(dl["max_speed_mbps"]))
+        self.downloader.save_root = Path(dl["save_root"])
+        self.downloader.qn = int(dl["qn"])
+        self.downloader.prefer_dash = bool(dl["prefer_dash"])
+        self.downloader.ffmpeg_path = str(dl.get("ffmpeg_path", "")) or self.downloader._find_ffmpeg()
+        self.download_manager.concurrency = max(1, int(dl["concurrency"]))
 
     @property
     def has_ffmpeg(self) -> bool:

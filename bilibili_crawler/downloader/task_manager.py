@@ -50,6 +50,7 @@ class DownloadTaskManager:
 
     def start(self) -> None:
         self._stop_event.clear()
+        self._workers = [w for w in self._workers if w.is_alive()]
         for _ in range(self.concurrency):
             worker = threading.Thread(
                 target=self._worker_loop, name="download-worker", daemon=True
@@ -63,6 +64,7 @@ class DownloadTaskManager:
     def join(self, timeout: Optional[float] = None) -> None:
         for worker in self._workers:
             worker.join(timeout)
+        self._workers = [w for w in self._workers if w.is_alive()]
 
     def _should_continue(self) -> bool:
         if self._stop_event.is_set():
@@ -102,6 +104,10 @@ class DownloadTaskManager:
             detail = get_video_detail(self.downloader.client, bvid)
             if not detail.title and video.title:
                 detail.title = video.title
+            # 轻量扫描阶段 description 为空；下载时已拿到 view 详情，回写一次。
+            if detail.description and not video.description:
+                video.description = detail.description
+                self.repo.update_video_meta(video)
 
             def on_progress(downloaded: int, total: int, speed: str) -> None:
                 self.state.set_progress(

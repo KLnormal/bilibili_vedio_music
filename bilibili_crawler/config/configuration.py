@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict
 
@@ -82,6 +83,25 @@ def load_config(path: str | os.PathLike | None = None) -> Dict[str, Any]:
             config = _deep_merge(config, loaded)
 
     return config
+
+
+def save_config(config: Dict[str, Any], path: str | os.PathLike) -> Path:
+    """Atomically write a user configuration file and return its path."""
+    target = Path(path).resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            yaml.safe_dump(config, fh, allow_unicode=True, sort_keys=False)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temp_name, target)
+    finally:
+        try:
+            Path(temp_name).unlink(missing_ok=True)
+        except OSError:
+            pass
+    return target
 
 
 def resolve_data_path(config: Dict[str, Any]) -> Path:

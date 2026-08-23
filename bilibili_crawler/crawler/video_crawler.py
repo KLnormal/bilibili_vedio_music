@@ -1,18 +1,20 @@
 """Per-video metadata enrichment.
 
-A submission-list entry only carries ``bvid`` / ``title`` / ``pic`` / a
-``mm:ss`` duration. The authoritative metadata (precise ``duration`` seconds,
-``description``, ``cid``) comes from the ``view`` endpoint. This module turns a
-list item into a fully-populated :class:`Video` model.
+A submission-list entry already carries ``bvid`` / ``title`` / ``pic`` /
+``mm:ss`` duration and the publish timestamp, so scanning can build a
+:class:`Video` record **without** a per-video ``view`` API call. The ``view``
+call (which supplies the precise ``duration``, ``description`` and the
+``cid`` required for downloading) is deferred to the download stage, where it
+is needed anyway. This keeps the scan light (a few dozen requests for a large
+UP instead of hundreds), which drastically lowers risk-control pressure and
+lets the paginated scan reach deeper into the UP's history.
 """
 from __future__ import annotations
 
-import time
 from datetime import datetime, timezone
 
-from ..bilibili.client import BilibiliClient, BilibiliError
-from ..bilibili.user import VideoListItem
-from ..bilibili.video import get_video_detail
+from ..bilibili.user import VideoListItem, parse_duration_text
+from ..bilibili.video import VIDEO_URL_TEMPLATE
 from ..database.models import Video
 
 
@@ -20,28 +22,20 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def build_video(
-    client: BilibiliClient,
-    item: VideoListItem,
-    mid: int,
-    request_interval: float = 0.0,
-) -> Video:
-    """Build a Video model for a newly-discovered list item.
+def build_video(item: VideoListItem, mid: int) -> Video:
+    """Build a Video model from a submission-list entry (no view API call).
 
-    Raises :class:`BilibiliError` when the detail request fails, so the caller
-    can decide whether to keep going (a single failure must not crash the UP).
+    ``description``/``cid`` are filled later by the download stage, which calls
+    ``get_video_detail`` anyway.
     """
-    detail = get_video_detail(client, item.bvid)
-    if request_interval > 0:
-        time.sleep(request_interval)
     return Video(
         bvid=item.bvid,
         mid=mid,
-        duration=detail.duration,
-        created=detail.pubdate or item.created or None,
-        title=detail.title or item.title,
-        description=detail.description,
-        pic=detail.pic or item.pic,
-        url=detail.url,
+        duration=parse_duration_text(item.duration_text),
+        created=item.created or None,
+        title=item.title,
+        description="",
+        pic=item.pic,
+        url=VIDEO_URL_TEMPLATE.format(bvid=item.bvid),
         update_time=_now_iso(),
     )
