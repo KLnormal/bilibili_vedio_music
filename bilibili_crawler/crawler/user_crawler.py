@@ -110,6 +110,7 @@ class UserCrawler:
                 last_page = page
                 last_page_count = _count
                 self.repo.set_scan_progress(mid, next_page, True)
+                self.state.set_scan_progress(page, _count, next_page)
 
             for item in iter_submissions(
                 self.client, mid, page_size=self.page_size, max_pages=self.max_pages,
@@ -151,19 +152,24 @@ class UserCrawler:
             bounded = self.max_pages is not None and last_page >= self.max_pages
             if stopped_early:
                 self.repo.set_scan_progress(mid, max(1, last_page), True, complete=False)
+                self.state.finish_scan("扫描已停止，可继续续扫")
             elif bounded and (last_page_count or 0) >= self.page_size:
                 self.repo.set_scan_progress(mid, last_page + 1, True, complete=False)
+                self.state.finish_scan(f"已达到扫描上限：第 {last_page} 页")
             else:
                 self.repo.set_scan_progress(mid, 1, False, complete=True)
+                self.state.finish_scan("扫描完成")
         except SubmissionPageError as exc:
             # Keep the exact failed page so a later scan can continue instead
             # of restarting at page 1 and hitting the incremental short-circuit.
             self.repo.set_scan_progress(mid, exc.page, True, complete=False)
             logger.warning("submission scan stopped at page %s for mid %s: %s", exc.page, mid, exc)
             self.state.log(f"投稿扫描在第 {exc.page} 页暂停，可重试继续: {exc.cause}")
+            self.state.finish_scan(f"扫描暂停：第 {exc.page} 页")
         except BilibiliError as exc:
             logger.warning("submission scan failed for mid %s: %s", mid, exc)
             self.state.log(f"投稿扫描中断 {mid}: {exc}")
+            self.state.finish_scan("扫描失败")
         finally:
             self.repo.touch_up_crawl(mid, first=first_crawl)
 

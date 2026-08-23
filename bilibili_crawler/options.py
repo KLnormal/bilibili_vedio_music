@@ -57,6 +57,7 @@ class DownloadOptions:
     max_duration: Optional[int] = None  # seconds, inclusive
     min_date: Optional[str] = None      # "20xx.xx.xx" or "0" = unlimited
     max_date: Optional[str] = None      # "20xx.xx.xx" or "0" = unlimited
+    date_override: bool = False         # ignore per-UP date rules for this task
 
     @property
     def qn(self) -> Optional[int]:
@@ -75,7 +76,7 @@ class DownloadOptions:
 
     @property
     def date_filter_active(self) -> bool:
-        return self.min_date not in (None, "", "0") or self.max_date not in (None, "", "0")
+        return self.date_override or self.min_date not in (None, "", "0") or self.max_date not in (None, "", "0")
 
     def validate(self) -> None:
         if self.media_type not in MEDIA_TYPES:

@@ -38,6 +38,10 @@ class Snapshot:
     # scan
     current_up: str = ""
     scan_status: str = ""
+    scan_active: bool = False
+    scan_page: int = 0
+    scan_items: int = 0
+    scan_next_page: int = 1
     new_count: int = 0
     existing_count: int = 0
     filtered_count: int = 0
@@ -62,6 +66,10 @@ class RuntimeState:
         self._stopped = False
         self._current_up = ""
         self._scan_status = ""
+        self._scan_active = False
+        self._scan_page = 0
+        self._scan_items = 0
+        self._scan_next_page = 1
         self._new_count = 0
         self._existing_count = 0
         self._filtered_count = 0
@@ -106,6 +114,20 @@ class RuntimeState:
         with self._lock:
             self._current_up = up_name
             self._scan_status = status
+            self._scan_active = True
+
+    def set_scan_progress(self, page: int, items: int, next_page: int) -> None:
+        with self._lock:
+            self._scan_page = max(0, int(page))
+            self._scan_items += max(0, int(items))
+            self._scan_next_page = max(1, int(next_page))
+            self._scan_active = True
+            self._scan_status = f"第 {self._scan_page} 页，已处理 {self._scan_items} 条"
+
+    def finish_scan(self, status: str = "扫描完成") -> None:
+        with self._lock:
+            self._scan_status = status
+            self._scan_active = False
 
     def add_scan_stats(self, new: int = 0, existing: int = 0, filtered: int = 0) -> None:
         with self._lock:
@@ -118,6 +140,9 @@ class RuntimeState:
             self._new_count = 0
             self._existing_count = 0
             self._filtered_count = 0
+            self._scan_page = 0
+            self._scan_items = 0
+            self._scan_next_page = 1
 
     # ------------------------------------------------------------ download --
     def set_progress(self, **kwargs) -> None:
@@ -152,6 +177,10 @@ class RuntimeState:
                 stopped=self._stopped,
                 current_up=self._current_up,
                 scan_status=self._scan_status,
+                scan_active=self._scan_active,
+                scan_page=self._scan_page,
+                scan_items=self._scan_items,
+                scan_next_page=self._scan_next_page,
                 new_count=self._new_count,
                 existing_count=self._existing_count,
                 filtered_count=self._filtered_count,

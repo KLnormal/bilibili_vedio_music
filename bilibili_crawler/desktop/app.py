@@ -92,6 +92,15 @@ class OverviewPage(QWidget):
         progress_layout.addWidget(self.progress)
         root.addWidget(progress_box)
 
+        scan_box = QGroupBox("当前扫描")
+        scan_layout = QVBoxLayout(scan_box)
+        self.scan_label = QLabel("暂无扫描")
+        self.scan_progress = QProgressBar()
+        self.scan_progress.setRange(0, 100)
+        scan_layout.addWidget(self.scan_label)
+        scan_layout.addWidget(self.scan_progress)
+        root.addWidget(scan_box)
+
         lower = QHBoxLayout()
         self.up_table = QTableWidget(0, 4)
         self.up_table.setHorizontalHeaderLabels(["UP 主", "UID", "视频数", "最近扫描"])
@@ -127,6 +136,15 @@ class OverviewPage(QWidget):
             if key in self.cards:
                 self.cards[key].set_value(count)
         snap = self.controller.app.state.snapshot()
+        if snap.scan_active:
+            self.scan_label.setText(
+                f"{snap.current_up or 'UP'} · {snap.scan_status} · 新增 {snap.new_count} / 已有 {snap.existing_count} / 过滤 {snap.filtered_count}"
+            )
+            self.scan_progress.setRange(0, 0)
+        else:
+            self.scan_label.setText(snap.scan_status or "暂无扫描")
+            self.scan_progress.setRange(0, 100)
+            self.scan_progress.setValue(100 if snap.scan_status in {"扫描完成", "扫描已停止，可继续续扫"} or snap.scan_status.startswith("已达到扫描上限") else 0)
         p = snap.progress
         self.progress_label.setText(
             f"{p.title or '暂无任务'}  {p.bvid}  {p.speed or ''}".strip()
@@ -198,7 +216,7 @@ class VideoTable(QTableWidget):
 
 
 class UpRulesDialog(QDialog):
-    """Edit one UP's duration/date rules and title blacklist."""
+    """Edit one UP's default duration/date rules."""
 
     def __init__(self, controller: DesktopController, mid: int, parent=None):
         super().__init__(parent)
@@ -224,31 +242,12 @@ class UpRulesDialog(QDialog):
         form.addRow("最早发布时间", self.min_date)
         form.addRow("最晚发布时间", self.max_date)
         root.addLayout(form)
-        root.addWidget(QLabel("标题黑名单（仅此 UP 生效）"))
-        self.blacklist = QListWidget()
-        self.blacklist.addItems(controller.list_blacklist(mid))
-        root.addWidget(self.blacklist, 1)
-        add_row = QHBoxLayout()
-        self.keyword = QLineEdit(); self.keyword.setPlaceholderText("输入关键词")
-        add_row.addWidget(self.keyword, 1)
-        add_row.addWidget(_button("添加", self.add_keyword))
-        add_row.addWidget(_button("删除选中", self.remove_keyword))
-        root.addLayout(add_row)
+        root.addWidget(QLabel("这些是该 UP 的默认时长和日期规则；本次下载可在‘任务与视频’中临时覆盖。"))
+        root.addStretch(1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
-
-    def add_keyword(self):
-        keyword = self.keyword.text().strip()
-        if keyword and not [self.blacklist.item(i).text() for i in range(self.blacklist.count())].count(keyword):
-            self.blacklist.addItem(keyword)
-        self.keyword.clear()
-
-    def remove_keyword(self):
-        row = self.blacklist.currentRow()
-        if row >= 0:
-            self.blacklist.takeItem(row)
 
     def save(self):
         min_d = self.min_duration.value() or None
@@ -267,6 +266,51 @@ class UpRulesDialog(QDialog):
             QMessageBox.warning(self, "日期无效", str(exc))
             return
         self.controller.save_up_filter_settings(UpFilterSettings(self.mid, min_d, max_d, min_date, max_date))
+        self.accept()
+
+
+class BlacklistDialog(QDialog):
+    """Manage title keywords for exactly one UP."""
+
+    def __init__(self, controller: DesktopController, mid: int, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+        self.mid = mid
+        self.setWindowTitle(f"UP {mid} 黑名单")
+        self.resize(430, 420)
+        root = QVBoxLayout(self)
+        root.addWidget(QLabel("命中标题关键词的视频会在本次准备下载时被过滤。"))
+        self.blacklist = QListWidget()
+        self.blacklist.addItems(controller.list_blacklist(mid))
+        self.blacklist.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        root.addWidget(self.blacklist, 1)
+        add_row = QHBoxLayout()
+        self.keyword = QLineEdit()
+        self.keyword.setPlaceholderText("输入关键词，例如：直播切片")
+        self.keyword.returnPressed.connect(self.add_keyword)
+        add_row.addWidget(self.keyword, 1)
+        add_row.addWidget(_button("添加", self.add_keyword, True))
+        add_row.addWidget(_button("删除选中", self.remove_keyword))
+        root.addLayout(add_row)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.save)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+
+    def add_keyword(self):
+        keyword = self.keyword.text().strip()
+        current = [self.blacklist.item(i).text() for i in range(self.blacklist.count())]
+        if keyword and keyword.casefold() not in {item.casefold() for item in current}:
+            self.blacklist.addItem(keyword)
+            self.blacklist.setCurrentRow(self.blacklist.count() - 1)
+        self.keyword.clear()
+
+    def remove_keyword(self):
+        row = self.blacklist.currentRow()
+        if row >= 0:
+            self.blacklist.takeItem(row)
+
+    def save(self):
         wanted = [self.blacklist.item(i).text() for i in range(self.blacklist.count())]
         current = self.controller.list_blacklist(self.mid)
         for keyword in current:
@@ -299,7 +343,8 @@ class UpPage(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         root.addWidget(self.table, 1)
         actions = QHBoxLayout()
-        for text, slot in [("扫描", self.scan), ("规则设置", self.rules), ("检查文件", self.check), ("预览", self.preview),
+        for text, slot in [("扫描", self.scan), ("规则设置", self.rules), ("黑名单", self.blacklist),
+                           ("检查文件", self.check), ("预览", self.preview),
                            ("下载", self.download), ("删除", self.remove)]:
             actions.addWidget(_button(text, slot))
         actions.addStretch()
@@ -344,6 +389,14 @@ class UpPage(QWidget):
             self.refresh()
             self.on_refresh()
 
+    def blacklist(self):
+        mid = self.selected_mid()
+        if mid is None:
+            return
+        if BlacklistDialog(self.controller, mid, self).exec() == QDialog.DialogCode.Accepted:
+            self.refresh()
+            self.on_refresh()
+
     def preview(self):
         self.controller.start_preview(self.selected_mid(), DownloadOptions())
 
@@ -382,6 +435,34 @@ class TasksPage(QWidget):
             controls.addWidget(widget)
         controls.addWidget(self.search, 1)
         root.addLayout(controls)
+
+        self.filter_box = QGroupBox("本次下载筛选（仅本次任务，不修改 UP 默认规则）")
+        filter_layout = QGridLayout(self.filter_box)
+        self.duration_override = QCheckBox("覆盖时长")
+        self.min_duration = QSpinBox(); self.min_duration.setRange(0, 86400); self.min_duration.setValue(0)
+        self.min_duration.setSuffix(" 秒"); self.min_duration.setSpecialValueText("不限")
+        self.max_duration = QSpinBox(); self.max_duration.setRange(0, 86400); self.max_duration.setValue(86400)
+        self.max_duration.setSuffix(" 秒")
+        self.date_override = QCheckBox("覆盖发布时间")
+        self.min_date = QLineEdit("0"); self.min_date.setPlaceholderText("最早 YYYY.MM.DD，0=不限")
+        self.max_date = QLineEdit("0"); self.max_date.setPlaceholderText("最晚 YYYY.MM.DD，0=不限")
+        filter_layout.addWidget(self.duration_override, 0, 0)
+        filter_layout.addWidget(QLabel("从"), 0, 1)
+        filter_layout.addWidget(self.min_duration, 0, 2)
+        filter_layout.addWidget(QLabel("到"), 0, 3)
+        filter_layout.addWidget(self.max_duration, 0, 4)
+        filter_layout.addWidget(self.date_override, 1, 0)
+        filter_layout.addWidget(QLabel("从"), 1, 1)
+        filter_layout.addWidget(self.min_date, 1, 2)
+        filter_layout.addWidget(QLabel("到"), 1, 3)
+        filter_layout.addWidget(self.max_date, 1, 4)
+        filter_layout.setColumnStretch(5, 1)
+        self.duration_override.toggled.connect(self._toggle_duration_filter)
+        self.date_override.toggled.connect(self._toggle_date_filter)
+        self._toggle_duration_filter(False)
+        self._toggle_date_filter(False)
+        root.addWidget(self.filter_box)
+
         buttons = QHBoxLayout()
         for text, slot, primary in [("扫描", self.scan, False), ("预览", self.preview, False),
                                     ("开始下载", self.download, True), ("暂停/恢复", self.pause, False),
@@ -395,6 +476,12 @@ class TasksPage(QWidget):
         self.task_progress.setValue(0)
         root.addWidget(self.task_status)
         root.addWidget(self.task_progress)
+        self.scan_status = QLabel("扫描未启动")
+        self.scan_progress = QProgressBar()
+        self.scan_progress.setRange(0, 100)
+        self.scan_progress.setValue(0)
+        root.addWidget(self.scan_status)
+        root.addWidget(self.scan_progress)
         self.table = VideoTable(controller)
         root.addWidget(self.table, 1)
         self.log = QTextEdit(readOnly=True)
@@ -431,6 +518,15 @@ class TasksPage(QWidget):
         if text != self._last_log_text:
             self._last_log_text = text
             self.log.setPlainText(text)
+        if snapshot.scan_active:
+            self.scan_status.setText(
+                f"扫描：{snapshot.current_up or 'UP'} · {snapshot.scan_status} · 新增 {snapshot.new_count} / 已有 {snapshot.existing_count} / 过滤 {snapshot.filtered_count}"
+            )
+            self.scan_progress.setRange(0, 0)
+        else:
+            self.scan_status.setText(f"扫描：{snapshot.scan_status or '未启动'}")
+            self.scan_progress.setRange(0, 100)
+            self.scan_progress.setValue(100 if snapshot.scan_status in {"扫描完成", "扫描已停止，可继续续扫"} or snapshot.scan_status.startswith("已达到扫描上限") else 0)
         progress = snapshot.progress
         if progress.bvid:
             self.task_status.setText(
@@ -449,17 +545,28 @@ class TasksPage(QWidget):
         if name == "download":
             self.task_status.setText("下载任务已启动，正在准备队列...")
             self.task_progress.setRange(0, 0)
+        elif name == "scan":
+            self.scan_status.setText("扫描任务已启动，正在获取投稿列表...")
+            self.scan_progress.setRange(0, 0)
 
     def _task_finished(self, name, result):
         if name == "download":
             self.task_status.setText("下载任务已完成")
             self.task_progress.setRange(0, 100)
             self.task_progress.setValue(100)
+        elif name == "scan":
+            self.scan_status.setText("扫描任务已完成")
+            self.scan_progress.setRange(0, 100)
+            self.scan_progress.setValue(100)
 
     def _task_failed(self, name, message):
         if name == "download":
             self.task_status.setText(f"下载任务失败：{message}")
             self.task_progress.setRange(0, 100)
+        elif name == "scan":
+            self.scan_status.setText(f"扫描任务失败：{message}")
+            self.scan_progress.setRange(0, 100)
+            self.scan_progress.setValue(0)
 
     def _filter(self, text: str):
         query = text.casefold().strip()
@@ -468,21 +575,48 @@ class TasksPage(QWidget):
             bvid = self.table.item(row, 2).text().casefold()
             self.table.setRowHidden(row, bool(query and query not in title and query not in bvid))
 
+    def _toggle_duration_filter(self, enabled: bool):
+        self.min_duration.setEnabled(enabled)
+        self.max_duration.setEnabled(enabled)
+
+    def _toggle_date_filter(self, enabled: bool):
+        self.min_date.setEnabled(enabled)
+        self.max_date.setEnabled(enabled)
+
     def options(self):
         quality = self.quality.currentText()
-        return DownloadOptions(quality=None if quality == "默认" else quality,
-                               media_type=self.media.currentText())
+        options = DownloadOptions(
+            quality=None if quality == "默认" else quality,
+            media_type=self.media.currentText(),
+            min_duration=self.min_duration.value() if self.duration_override.isChecked() else None,
+            max_duration=self.max_duration.value() if self.duration_override.isChecked() else None,
+            min_date=self.min_date.text().strip() or "0" if self.date_override.isChecked() else None,
+            max_date=self.max_date.text().strip() or "0" if self.date_override.isChecked() else None,
+            date_override=self.date_override.isChecked(),
+        )
+        try:
+            options.validate()
+        except ValueError as exc:
+            QMessageBox.warning(self, "本次筛选无效", str(exc))
+            return None
+        return options
 
     def scan(self):
         if not self.controller.start_scan(self.mid_value()):
             QMessageBox.information(self, "任务提示", "扫描任务已经在运行中")
 
     def preview(self):
-        if not self.controller.start_preview(self.mid_value(), self.options()):
+        options = self.options()
+        if options is None:
+            return
+        if not self.controller.start_preview(self.mid_value(), options):
             QMessageBox.information(self, "任务提示", "预览任务已经在运行中")
 
     def download(self):
-        if self.controller.start_download(self.mid_value(), self.options()):
+        options = self.options()
+        if options is None:
+            return
+        if self.controller.start_download(self.mid_value(), options):
             self.task_status.setText("下载任务已启动，正在准备队列...")
         else:
             QMessageBox.warning(self, "无法开始下载", "下载任务已经在运行中，或应用正在退出")
