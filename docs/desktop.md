@@ -1,0 +1,48 @@
+# 桌面工作台
+
+## 职责
+
+`bilibili_crawler.desktop` 提供 Windows 上的 PySide6 可视化工作台；它只负责
+界面、任务调度和状态展示，扫描、筛选、SQLite 与下载仍由现有 `App` 提供。
+
+## 启动
+
+```powershell
+python main.py desktop
+python main.py desktop --config path\to\config.yaml
+```
+
+首次使用需要在项目虚拟环境安装 `requirements.txt` 中的 PySide6。无参数运行
+`python main.py` 仍启动原有 TUI。
+
+## 页面
+
+- 总览：状态卡片、当前进度、UP 概览和日志。
+- UP 管理：添加/删除/启用 UP，以及单个 UP 扫描、检查、预览和下载。
+- 任务与视频：视频表格、搜索、清晰度/媒体类型、任务控制和日志。
+- 设置：全局默认数据库、Cookie、下载、筛选、限速、ffmpeg 和日志配置。
+- UP 规则：在“UP 管理 → 规则设置”中为每个 UP 单独配置时长、发布时间和标题黑名单；未填写的时长/日期继承全局默认值。
+
+## 控制层接口
+
+`DesktopController` 是视图唯一的业务入口。长任务通过 Qt worker 在后台线程
+执行，并发出 `task_started`、`task_progress`、`task_finished`、`task_failed`、
+`state_changed` 和 `log_message` 信号。SQLite 与 `RuntimeState` 仍是唯一状态源。
+
+主要操作包括：
+
+- `start_scan(mid)` / `start_check(mid)` / `start_preview(mid, options)`
+- `start_download(mid, options)` / `start_retry(mid)`
+- `start_add_up(mid)` / `start_login()`
+- `pause(value)` / `stop()` / `save_settings(config)`
+
+## 登录
+
+`LoginManager.request_qrcode()` 获取二维码矩阵，`poll_qrcode_once()` 单次轮询并
+持久化 Cookie。CLI 仍使用原有交互式封装，桌面端将轮询放在后台 worker 中。
+
+## 更新记录
+
+2026-08-24：新增 PySide6 桌面入口、深色工作台、后台任务控制、二维码登录窗口、
+缩略图缓存、可视化设置和离线 smoke tests。
+2026-08-24：修复重复重建视频表导致的卡顿/日志闪烁；新增下载进度条和下载启动提示；筛选规则改为 UP 级别。
