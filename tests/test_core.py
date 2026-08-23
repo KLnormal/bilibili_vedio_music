@@ -10,6 +10,7 @@ import yaml
 
 from bilibili_crawler.app import App
 from bilibili_crawler.bilibili.video import Stream, VideoDetail, pick_best_leq
+from bilibili_crawler.bilibili.user import SubmissionPageError, UpProfile, VideoListItem, iter_submissions
 from bilibili_crawler.database.database import Database
 from bilibili_crawler.database.models import DownloadStatus, Up, Video
 from bilibili_crawler.database.repository import Repository
@@ -43,6 +44,102 @@ class DurationFilterTest(unittest.TestCase):
             DurationFilter(1800, 300)
 
 
+class SubmissionPaginationTest(unittest.TestCase):
+    class FakeClient:
+        def __init__(self, pages, failures=None):
+            self.pages = pages
+            self.failures = dict(failures or {})
+            self.calls = []
+
+        @staticmethod
+        def anticrawl_params():
+            return {}
+
+        def get_json(self, _url, params=None, wbi=False):
+            page = int(params["pn"])
+            self.calls.append(page)
+            remaining = self.failures.get(page, 0)
+            if remaining:
+                self.failures[page] = remaining - 1
+                from bilibili_crawler.bilibili.client import BilibiliError
+                raise BilibiliError("HTTP 412 (risk control)")
+            return {"list": {"vlist": self.pages.get(page, [])}}
+
+    def test_keeps_mixed_related_rows_and_stops_on_short_page(self):
+        client = self.FakeClient({
+            1: [{"bvid": "BV1", "mid": 7, "length": "01:00"},
+                {"bvid": "FOREIGN", "mid": 8, "length": "01:00"}],
+            2: [{"bvid": "BV2", "mid": 7, "length": "02:00"}],
+        })
+        items = list(iter_submissions(client, 7, page_size=2, page_retries=0, page_backoff=0))
+        # The space page may contain related V.W.P/Kamitsubaki uploads.  Keep
+        # those rows so pagination matches the web UI's historical count.
+        self.assertEqual([x.bvid for x in items], ["BV1", "FOREIGN", "BV2"])
+        self.assertEqual(client.calls, [1, 2])
+
+    def test_retries_same_page_and_reports_page_on_exhaustion(self):
+        client = self.FakeClient({1: [{"bvid": "BV1", "mid": 7}]}, failures={1: 1})
+        with mock.patch("bilibili_crawler.bilibili.user.time.sleep"):
+            items = list(iter_submissions(client, 7, page_size=30, page_retries=1, page_backoff=0))
+        self.assertEqual([x.bvid for x in items], ["BV1"])
+        self.assertEqual(client.calls, [1, 1])
+
+        failing = self.FakeClient({}, failures={3: 2})
+        with mock.patch("bilibili_crawler.bilibili.user.time.sleep"):
+            with self.assertRaises(SubmissionPageError) as ctx:
+                list(iter_submissions(failing, 7, page_size=30, start_page=3,
+                                      page_retries=1, page_backoff=0))
+        self.assertEqual(ctx.exception.page, 3)
+
+    def test_repeated_page_is_not_treated_as_infinite_history(self):
+        page = [{"bvid": "BV1", "mid": 7}]
+        client = self.FakeClient({1: page, 2: page})
+        with self.assertRaises(SubmissionPageError):
+            list(iter_submissions(client, 7, page_size=1, page_retries=0, page_backoff=0))
+
+
+class ScanResumeTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        cfg = self.tmp / "config.yaml"
+        cfg.write_text(yaml.safe_dump({
+            "database": {"path": str(self.tmp / "db.sqlite")},
+            "auth": {"cookie_file": str(self.tmp / "cookies.json")},
+            "download": {"save_root": str(self.tmp / "downloads"), "ffmpeg_path": ""},
+        }), encoding="utf-8")
+        self.app = App(str(cfg), configure_logging=False)
+        self.app.repo.upsert_up(Up(mid=7, name="A"))
+
+    def tearDown(self):
+        self.app.close()
+
+    def test_failed_page_is_resumed_without_incremental_short_circuit(self):
+        from bilibili_crawler.bilibili.client import BilibiliError
+
+        with mock.patch("bilibili_crawler.crawler.user_crawler.get_up_profile",
+                        return_value=UpProfile(7, "A")), \
+             mock.patch("bilibili_crawler.crawler.user_crawler.iter_submissions",
+                        side_effect=SubmissionPageError(5, BilibiliError("412"))):
+            self.app.crawler.crawl_up(7)
+        up = self.app.repo.get_up(7)
+        self.assertEqual((up.scan_next_page, up.scan_incomplete), (5, True))
+
+        starts = []
+        def resumed(_client, _mid, **kwargs):
+            starts.append(kwargs["start_page"])
+            kwargs["page_callback"](5, 1, 6)
+            yield VideoListItem("BVresume", "resume", duration_text="01:00", owner_mid=7)
+
+        with mock.patch("bilibili_crawler.crawler.user_crawler.get_up_profile",
+                        return_value=UpProfile(7, "A")), \
+             mock.patch("bilibili_crawler.crawler.user_crawler.iter_submissions", resumed):
+            self.app.crawler.crawl_up(7)
+        self.assertEqual(starts, [5])
+        up = self.app.repo.get_up(7)
+        self.assertEqual((up.scan_next_page, up.scan_incomplete), (1, False))
+        self.assertTrue(self.app.repo.video_exists("BVresume"))
+
+
 class RateLimiterTest(unittest.TestCase):
     def test_default_rate(self):
         limiter = RateLimiter(mbps_to_bps(40))
@@ -73,6 +170,16 @@ class RepositoryTest(unittest.TestCase):
         self.assertEqual(up.name, "A")
         self.repo.delete_up(1)
         self.assertIsNone(self.repo.get_up(1))
+
+    def test_scan_cursor_persists(self):
+        self.repo.upsert_up(Up(mid=1, name="A"))
+        self.repo.set_scan_progress(1, 9, True)
+        up = self.repo.get_up(1)
+        self.assertEqual(up.scan_next_page, 9)
+        self.assertTrue(up.scan_incomplete)
+        self.repo.set_scan_progress(1, 1, False)
+        up = self.repo.get_up(1)
+        self.assertEqual((up.scan_next_page, up.scan_incomplete), (1, False))
 
     def test_bvid_is_unique_identity(self):
         self.repo.upsert_up(Up(mid=1, name="A"))

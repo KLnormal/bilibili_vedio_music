@@ -125,6 +125,7 @@ def iter_submissions(
                 if candidate_signature and candidate_signature in seen_signatures:
                     raise BilibiliError("repeated page payload")
                 candidates = []
+                all_items = []
                 for item in vlist:
                     if not isinstance(item, dict):
                         continue
@@ -133,21 +134,25 @@ def iter_submissions(
                         owner_mid = int(owner_mid) if owner_mid is not None else None
                     except (TypeError, ValueError):
                         owner_mid = None
-                    if owner_mid is not None and owner_mid != mid:
-                        continue
-                    candidates.append(
-                        VideoListItem(
-                            bvid=item.get("bvid", ""),
-                            title=item.get("title", ""),
-                            pic=item.get("pic", ""),
-                            duration_text=item.get("length", ""),
-                            created=item.get("created", 0),
-                            owner_mid=owner_mid,
-                        )
+                    parsed = VideoListItem(
+                        bvid=item.get("bvid", ""),
+                        title=item.get("title", ""),
+                        pic=item.get("pic", ""),
+                        duration_text=item.get("length", ""),
+                        created=item.get("created", 0),
+                        owner_mid=owner_mid,
                     )
+                    all_items.append(parsed)
+                    if owner_mid is None or owner_mid == mid:
+                        candidates.append(parsed)
                 if vlist and not candidates:
                     raise BilibiliError("foreign submission payload")
-                valid_items = candidates
+                # Bilibili's official space list includes related V.W.P /
+                # Kamitsubaki uploads in mixed pages.  The web UI counts these
+                # rows too, so retain the raw page once it contains at least
+                # one row belonging to the requested UP.  A foreign-only page
+                # is still rejected above as a risk-control response.
+                valid_items = all_items
                 raw_count = len(vlist)
                 signature = candidate_signature
                 break
