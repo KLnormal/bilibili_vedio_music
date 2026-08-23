@@ -36,6 +36,9 @@ class Up:
     last_crawl_time: Optional[str] = None
     enabled: bool = True
     save_path: str = ""
+    scan_next_page: int = 1
+    scan_incomplete: bool = False
+    scan_complete: bool = False
 
 
 @dataclass

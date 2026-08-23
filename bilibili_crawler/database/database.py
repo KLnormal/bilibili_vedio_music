@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS up (
     first_crawl_time TEXT,
     last_crawl_time  TEXT,
     enabled          INTEGER NOT NULL DEFAULT 1,
-    save_path        TEXT    NOT NULL DEFAULT ''
+    save_path        TEXT    NOT NULL DEFAULT '',
+    scan_next_page   INTEGER NOT NULL DEFAULT 1,
+    scan_incomplete  INTEGER NOT NULL DEFAULT 0,
+    scan_complete    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS video (
@@ -89,6 +92,19 @@ class Database:
     def _migrate(self) -> None:
         """Idempotent schema migrations for databases created by older versions."""
         cols = [row[1] for row in self._conn.execute("PRAGMA table_info(video)")]
+        up_cols = [row[1] for row in self._conn.execute("PRAGMA table_info(up)")]
+        if "scan_next_page" not in up_cols:
+            self._conn.execute(
+                "ALTER TABLE up ADD COLUMN scan_next_page INTEGER NOT NULL DEFAULT 1"
+            )
+        if "scan_incomplete" not in up_cols:
+            self._conn.execute(
+                "ALTER TABLE up ADD COLUMN scan_incomplete INTEGER NOT NULL DEFAULT 0"
+            )
+        if "scan_complete" not in up_cols:
+            self._conn.execute(
+                "ALTER TABLE up ADD COLUMN scan_complete INTEGER NOT NULL DEFAULT 0"
+            )
         if "filter_reason" not in cols:
             self._conn.execute(
                 "ALTER TABLE video ADD COLUMN filter_reason TEXT NOT NULL DEFAULT ''"

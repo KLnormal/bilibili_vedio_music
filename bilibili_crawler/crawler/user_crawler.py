@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from ..bilibili.client import BilibiliClient, BilibiliError
-from ..bilibili.user import get_up_profile, iter_submissions
+from ..bilibili.user import SubmissionPageError, get_up_profile, iter_submissions
 from ..database.models import DownloadStatus, Up, Video
 from ..database.repository import Repository
 from ..filter.duration_filter import DurationFilter
@@ -87,6 +87,10 @@ class UserCrawler:
             else self.duration_filter
         )
         first_crawl = up.first_crawl_time is None
+        resume_scan = bool(up.scan_incomplete)
+        start_page = up.scan_next_page if resume_scan else 1
+        last_page = start_page - 1
+        last_page_count = None
 
         # Refresh profile on every crawl (name/face/sign may change).
         profile = get_up_profile(self.client, mid)
@@ -99,11 +103,20 @@ class UserCrawler:
         self.state.set_scan(up.name or str(mid), "获取投稿列表...")
 
         consecutive_existing = 0
+        stopped_early = False
         try:
+            def page_done(page: int, _count: int, next_page: int) -> None:
+                nonlocal last_page, last_page_count
+                last_page = page
+                last_page_count = _count
+                self.repo.set_scan_progress(mid, next_page, True)
+
             for item in iter_submissions(
-                self.client, mid, page_size=self.page_size, max_pages=self.max_pages
+                self.client, mid, page_size=self.page_size, max_pages=self.max_pages,
+                start_page=start_page, page_callback=page_done,
             ):
                 if self.state.stopped:
+                    stopped_early = True
                     break
                 if not item.bvid:
                     continue
@@ -113,7 +126,7 @@ class UserCrawler:
                     self.state.add_scan_stats(existing=1)
                     # Refresh cheap metadata for known videos.
                     self._touch_existing(item, mid)
-                    if not first_crawl:
+                    if up.scan_complete and not resume_scan:
                         consecutive_existing += 1
                         if consecutive_existing >= self.stop_after_existing:
                             self.state.set_scan(
@@ -135,6 +148,19 @@ class UserCrawler:
                 else:
                     stats.filtered += 1
                     self.state.add_scan_stats(filtered=1)
+            bounded = self.max_pages is not None and last_page >= self.max_pages
+            if stopped_early:
+                self.repo.set_scan_progress(mid, max(1, last_page), True, complete=False)
+            elif bounded and (last_page_count or 0) >= self.page_size:
+                self.repo.set_scan_progress(mid, last_page + 1, True, complete=False)
+            else:
+                self.repo.set_scan_progress(mid, 1, False, complete=True)
+        except SubmissionPageError as exc:
+            # Keep the exact failed page so a later scan can continue instead
+            # of restarting at page 1 and hitting the incremental short-circuit.
+            self.repo.set_scan_progress(mid, exc.page, True, complete=False)
+            logger.warning("submission scan stopped at page %s for mid %s: %s", exc.page, mid, exc)
+            self.state.log(f"投稿扫描在第 {exc.page} 页暂停，可重试继续: {exc.cause}")
         except BilibiliError as exc:
             logger.warning("submission scan failed for mid %s: %s", mid, exc)
             self.state.log(f"投稿扫描中断 {mid}: {exc}")

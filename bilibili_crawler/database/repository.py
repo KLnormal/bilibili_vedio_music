@@ -29,8 +29,9 @@ class Repository:
             self._db.connection.execute(
                 """
                 INSERT INTO up (mid, name, face, description, first_crawl_time,
-                                last_crawl_time, enabled, save_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                last_crawl_time, enabled, save_path,
+                                scan_next_page, scan_incomplete, scan_complete)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(mid) DO UPDATE SET
                     name = excluded.name,
                     face = excluded.face,
@@ -47,6 +48,9 @@ class Repository:
                     up.last_crawl_time,
                     int(up.enabled),
                     up.save_path,
+                    up.scan_next_page,
+                    int(up.scan_incomplete),
+                    int(up.scan_complete),
                 ),
             )
 
@@ -102,7 +106,24 @@ class Repository:
             last_crawl_time=row["last_crawl_time"],
             enabled=bool(row["enabled"]),
             save_path=row["save_path"],
+            scan_next_page=row["scan_next_page"] if "scan_next_page" in row.keys() else 1,
+            scan_incomplete=bool(row["scan_incomplete"]) if "scan_incomplete" in row.keys() else False,
+            scan_complete=bool(row["scan_complete"]) if "scan_complete" in row.keys() else False,
         )
+
+    def set_scan_progress(self, mid: int, next_page: int, incomplete: bool,
+                          complete: Optional[bool] = None) -> None:
+        with self._lock:
+            if complete is None:
+                self._db.connection.execute(
+                    "UPDATE up SET scan_next_page = ?, scan_incomplete = ? WHERE mid = ?",
+                    (max(1, int(next_page)), int(incomplete), mid),
+                )
+            else:
+                self._db.connection.execute(
+                    "UPDATE up SET scan_next_page = ?, scan_incomplete = ?, scan_complete = ? WHERE mid = ?",
+                    (max(1, int(next_page)), int(incomplete), int(complete), mid),
+                )
 
     # ---------------------------------------------------------------- Video --
     def video_exists(self, bvid: str) -> bool:
