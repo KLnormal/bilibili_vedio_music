@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -16,8 +17,10 @@ from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 
 from bilibili_crawler.app import App
-from bilibili_crawler.database.models import Up, Video
+from bilibili_crawler.bilibili.video import VideoDetail
+from bilibili_crawler.database.models import DownloadStatus, Up, Video
 from bilibili_crawler.desktop.app import BlacklistDialog, MainWindow
+from bilibili_crawler.options import DownloadOptions
 
 
 class DesktopControlsTest(unittest.TestCase):
@@ -121,6 +124,39 @@ class DesktopControlsTest(unittest.TestCase):
         self.window.tasks.refresh_runtime()
         self.assertEqual(self.window.tasks.scan_progress.value(), 100)
         self.assertIn("扫描完成", self.window.tasks.scan_status.text())
+
+    def test_desktop_download_runs_end_to_end_without_network(self):
+        video = Video(bvid="BVdownload", mid=1, title="测试下载", duration=600)
+        self.app.repo.insert_video(video)
+        calls = []
+        output = self.root / "downloads" / "测试 UP" / "测试下载 [BVdownload].m4a"
+
+        class FakeDownloader:
+            client = None
+
+            def download(self, detail, up_dir, limiter, progress, media_type, qn):
+                calls.append((detail.bvid, up_dir, media_type, qn))
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(b"fake-audio")
+                progress(4, 4, "1.0 MB/s")
+                return output
+
+        self.app.download_manager.downloader = FakeDownloader()
+        detail = VideoDetail(bvid="BVdownload", title="测试下载", duration=600, cid=1, mid=1)
+        with mock.patch("bilibili_crawler.bilibili.video.get_video_detail", return_value=detail):
+            options = DownloadOptions(quality="1080p+", media_type="audio")
+            self.assertTrue(self.window.controller.start_download(1, options))
+            deadline = time.time() + 3
+            while self.window.controller.is_running("download") and time.time() < deadline:
+                self.qt.processEvents()
+                time.sleep(0.02)
+            self.qt.processEvents()
+
+        self.assertFalse(self.window.controller.is_running("download"))
+        downloaded = self.app.repo.get_video("BVdownload")
+        self.assertEqual(downloaded.download_status, DownloadStatus.DOWNLOADED, downloaded.download_error)
+        self.assertTrue(output.is_file())
+        self.assertEqual(calls, [("BVdownload", "测试 UP", "audio", 112)])
 
 
 if __name__ == "__main__":

@@ -167,7 +167,7 @@ class VideoDownloader:
                 f"audio download needs ffmpeg (no DASH audio stream for {detail.bvid})"
             )
         fallback = get_playback_info(
-            self.client, detail.bvid, detail.cid, qn=self.qn, prefer_dash=False
+            self.client, detail.bvid, detail.cid, qn=effective_qn, prefer_dash=False
         )
         stream = pick_best(fallback.progressive_streams)
         if stream is None:
