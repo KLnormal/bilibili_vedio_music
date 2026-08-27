@@ -19,7 +19,8 @@ python -m venv .venv                 # 仅首次需要
 
 产物为 `dist\BilibiliVideoWorkbench.exe`。也可以直接运行构建脚本；它会先安装或
 更新构建依赖。`dist/` 和 `build/` 已加入 `.gitignore`，不会把大体积二进制提交到
-源码仓库。
+源码仓库。重新构建前请先关闭正在运行的旧 exe，否则 Windows 文件锁会让
+PyInstaller 构建失败。
 
 ## 首次运行行为
 

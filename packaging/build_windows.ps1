@@ -13,10 +13,15 @@ if (-not (Test-Path -LiteralPath $python)) {
 
 if (-not $SkipInstall) {
     & $python -m pip install -r requirements.txt
+    if ($LASTEXITCODE -ne 0) { throw "安装项目依赖失败（退出码 $LASTEXITCODE）" }
     & $python -m pip install pyinstaller
+    if ($LASTEXITCODE -ne 0) { throw "安装 PyInstaller 失败（退出码 $LASTEXITCODE）" }
 }
 
 & $python -m PyInstaller --noconfirm --clean packaging\BilibiliVideoWorkbench.spec
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller 构建失败（退出码 $LASTEXITCODE）。如果旧 exe 正在运行，请先关闭它。"
+}
 $exe = Join-Path $projectRoot "dist\BilibiliVideoWorkbench.exe"
 if (-not (Test-Path -LiteralPath $exe)) {
     throw "PyInstaller 未生成预期文件：$exe"
