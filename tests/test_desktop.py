@@ -104,6 +104,24 @@ class DesktopControlsTest(unittest.TestCase):
         self.assertGreater(button_top, tasks.filter_box.geometry().bottom())
         self.assertGreater(status_top, button_top + download_button.height())
 
+    def test_task_filter_control_widths_and_blacklist_adjacency(self):
+        tasks = self.window.tasks
+        self.window.pages.setCurrentWidget(tasks)
+        self.qt.processEvents()
+        self.assertGreaterEqual(tasks.mid.minimumWidth(), 140)
+        self.assertGreaterEqual(tasks.quality.minimumWidth(), 140)
+        self.assertGreaterEqual(tasks.media.minimumWidth(), 120)
+        date_right = tasks.max_date.mapTo(tasks.filter_box, QPoint(tasks.max_date.width(), 0)).x()
+        blacklist_left = tasks.blacklist_box.geometry().left()
+        self.assertGreaterEqual(blacklist_left, date_right)
+        self.assertLessEqual(blacklist_left - date_right, 24)
+
+    def test_overview_group_caption_has_clearance(self):
+        overview = self.window.overview
+        label_top = overview.progress_label.mapTo(overview, QPoint(0, 0)).y()
+        box_top = overview.progress_label.parentWidget().mapTo(overview, QPoint(0, 0)).y()
+        self.assertGreaterEqual(label_top, box_top + 24)
+
     def test_desktop_window_can_reclaim_foreground_focus(self):
         """The interactive entry point must not leave a visible window inert."""
         self.window.activate_for_interaction()

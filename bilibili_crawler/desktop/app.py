@@ -86,6 +86,10 @@ class OverviewPage(QWidget):
 
         progress_box = QGroupBox("当前下载")
         progress_layout = QVBoxLayout(progress_box)
+        # Reserve space for the QGroupBox caption; without this margin the
+        # first label can be drawn over the title on high-DPI displays.
+        progress_layout.setContentsMargins(12, 28, 12, 12)
+        progress_layout.setSpacing(8)
         self.progress_label = QLabel("暂无任务")
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
@@ -95,6 +99,8 @@ class OverviewPage(QWidget):
 
         scan_box = QGroupBox("当前扫描")
         scan_layout = QVBoxLayout(scan_box)
+        scan_layout.setContentsMargins(12, 28, 12, 12)
+        scan_layout.setSpacing(8)
         self.scan_label = QLabel("暂无扫描")
         self.scan_progress = QProgressBar()
         self.scan_progress.setRange(0, 100)
@@ -453,12 +459,16 @@ class TasksPage(QWidget):
         controls.setSpacing(8)
         self.mid = QComboBox()
         self.mid.addItem("全部 UP", None)
+        self.mid.setMinimumWidth(140)
         self.quality = QComboBox()
         self.quality.addItems(["默认"] + list(QUALITY_TO_QN))
+        self.quality.setMinimumWidth(140)
         self.media = QComboBox()
         self.media.addItems(["video", "audio"])
+        self.media.setMinimumWidth(120)
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索标题或 BV 号")
+        self.search.setMinimumWidth(120)
         for label, widget in [("UP", self.mid), ("清晰度", self.quality), ("类型", self.media)]:
             controls.addWidget(QLabel(label))
             controls.addWidget(widget)
@@ -501,6 +511,8 @@ class TasksPage(QWidget):
         # Keep blacklist management beside the date filters so the controls
         # remain visible while configuring a one-off download task.
         self.blacklist_box = QGroupBox("黑名单管理")
+        self.blacklist_box.setMinimumWidth(320)
+        self.blacklist_box.setMaximumWidth(360)
         blacklist_layout = QGridLayout(self.blacklist_box)
         blacklist_layout.setContentsMargins(10, 22, 10, 8)
         blacklist_layout.setHorizontalSpacing(8)
@@ -525,8 +537,11 @@ class TasksPage(QWidget):
         blacklist_layout.addWidget(self.blacklist_disabled_button, 1, 2)
         self.blacklist_settings = _button("设置", self._open_blacklist_settings)
         blacklist_layout.addWidget(self.blacklist_settings, 1, 3)
-        filter_layout.addWidget(self.blacklist_box, 0, 6, 2, 2)
-        filter_layout.setColumnStretch(5, 1)
+        filter_layout.addWidget(self.blacklist_box, 0, 5, 2, 2)
+        # Column 5 is intentionally non-stretching: blacklist management sits
+        # directly beside the duration/date controls instead of drifting to
+        # the far right as the window grows.
+        filter_layout.setColumnStretch(5, 0)
         filter_layout.setColumnStretch(6, 1)
         self.duration_override.toggled.connect(self._toggle_duration_filter)
         self.date_override.toggled.connect(self._toggle_date_filter)
