@@ -12,7 +12,7 @@
 | 版本 | v0.2.0 |
 | 里程碑 | v0.1.0 十项目标已实现；v0.2.0 八个 Phase **全部完成** |
 | 当前分支 | `bilibili_branch_download` |
-| 测试 | 核心 + 桌面 + 下载器 + 打包引导离线测试 69/69 通过 |
+| 测试 | 核心 + 桌面 + 下载器 + 打包引导离线测试 72/72 通过 |
 | 关键验证 | ✅ 1080P / 4K 下载链路可行（ffprobe 实测） |
 
 ---
@@ -79,7 +79,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | app | `app.py` | ✅ 稳定 | 新增 `status`/`check_files`/`download_bv` |
 | options | `options.py` | ✅ 稳定 | `DownloadOptions` 统一参数对象 + 质量映射 |
 | tests | `tests/{test_core,test_downloader,test_packaging,e2e_demo,test_desktop}.py` | ✅ 稳定 | 核心、分页续扫、下载器模式、打包引导与桌面交互离线测试 |
-| desktop | `desktop/{app,controller,workers}.py` | ✅ 稳定 | PySide6 工作台、UP 级筛选、后台任务、登录与设置；Windows 前台激活、可交互平台保护、筛选区防重叠布局及任务页黑名单管理 |
+| desktop | `desktop/{app,controller,workers}.py` | ✅ 稳定 | PySide6 工作台、UP 级筛选、后台任务、登录与设置；Windows 前台激活、可交互平台保护、筛选区防重叠布局及任务页黑名单/指定下载名单管理 |
 | packaging | `packaging/{bootstrap.py,*.spec,build_windows.ps1}` | ✅ 稳定 | PyInstaller 单文件 EXE、首次运行环境检查、用户目录配置和 ffmpeg 便携安装 |
 
 ---

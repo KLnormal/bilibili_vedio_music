@@ -53,6 +53,10 @@ def explain(
         hit = checks["blacklist"]
         lines.append(f"Blacklist: {hit or 'none'}    {'FAIL' if hit else 'PASS'}")
 
+    if "allowlist" in checks:
+        hit = checks["allowlist"]
+        lines.append(f"Specified list: {hit or 'no match'}    {'PASS' if hit else 'FAIL'}")
+
     lines.append(f"Decision: {decision.decision}")
     if decision.reason:
         lines.append(f"Reason: {decision.reason}")

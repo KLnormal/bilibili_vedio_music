@@ -20,7 +20,7 @@ from bilibili_crawler.app import App
 from bilibili_crawler.bilibili.video import VideoDetail
 from bilibili_crawler.database.models import DownloadStatus, Up, Video
 from bilibili_crawler.desktop.app import (
-    BlacklistDialog,
+    AllowlistDialog, BlacklistDialog,
     MainWindow,
     _prepare_interactive_qt_platform,
 )
@@ -217,6 +217,24 @@ class DesktopControlsTest(unittest.TestCase):
         config["filter"]["blacklist_enabled"] = False
         self.window.controller.save_settings(config)
         self.assertEqual(self.app.preview(1, tasks.options())["stats"].get("READY"), 1)
+
+    def test_allowlist_controls_preview_and_dialog(self):
+        self.app.repo.insert_video(Video(bvid="BVtarget", mid=1, title="目标直播", duration=600))
+        self.app.repo.insert_video(Video(bvid="BVother", mid=1, title="其他视频", duration=600))
+        self.app.repo.add_allowlist(1, "目标")
+        config = self.window.controller.settings()
+        config["filter"]["allowlist_enabled"] = True
+        self.window.controller.save_settings(config)
+        result = self.app.preview(1, self.window.tasks.options())
+        self.assertEqual(result["stats"].get("READY"), 1)
+        self.assertEqual(result["stats"].get("FILTERED"), 1)
+
+        dialog = AllowlistDialog(self.window.controller, 1)
+        self.assertEqual(dialog.blacklist.count(), 1)
+        dialog.keyword.setText("新增")
+        dialog.add_keyword()
+        dialog.save()
+        self.assertEqual(self.app.repo.list_allowlist(1), ["目标", "新增"])
 
     def test_scan_status_bar_reflects_busy_and_finished(self):
         self.app.state.set_scan("测试 UP", "获取投稿列表...")

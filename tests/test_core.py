@@ -250,6 +250,15 @@ class DecisionEngineTest(unittest.TestCase):
         self.assertEqual(d.decision, "FILTERED")
         self.assertEqual(d.reason, "blacklist: TEST")
 
+    def test_allowlist_requires_title_match_and_blacklist_wins(self):
+        engine = DecisionEngine(0, 1800, ["禁"], allowlist_keywords=["目标"])
+        allowed = engine.decide(Video(bvid="BVallow", mid=1, title="目标视频", duration=60))
+        self.assertEqual(allowed.decision, "READY")
+        missing = engine.decide(Video(bvid="BVmiss", mid=1, title="普通视频", duration=60))
+        self.assertEqual(missing.reason, "allowlist_miss")
+        blocked = engine.decide(Video(bvid="BVblocked", mid=1, title="目标 禁", duration=60))
+        self.assertEqual(blocked.reason, "blacklist: 禁")
+
     def test_downloaded_vs_missing(self):
         v = Video(bvid="BV1a", mid=1, duration=600, title="t", download_status=DownloadStatus.DOWNLOADED, download_path="/no/such.mp4")
         self.assertEqual(self.engine.decide(v).decision, "MISSING")
@@ -329,6 +338,13 @@ class BlacklistRepositoryTest(unittest.TestCase):
         self.assertEqual(self.repo.list_blacklist(1), ["TEST", "广告"])
         self.assertTrue(self.repo.remove_blacklist(1, "TEST"))
         self.assertEqual(self.repo.list_blacklist(1), ["广告"])
+
+    def test_allowlist_crud(self):
+        self.assertTrue(self.repo.add_allowlist(1, "目标"))
+        self.assertFalse(self.repo.add_allowlist(1, "目标"))
+        self.assertEqual(self.repo.list_allowlist(1), ["目标"])
+        self.assertTrue(self.repo.remove_allowlist(1, "目标"))
+        self.assertEqual(self.repo.list_allowlist(1), [])
 
     def test_migration_skipped_to_filtered_and_filter_reason(self):
         # Build an old-style schema (no filter_reason, a SKIPPED row), then let

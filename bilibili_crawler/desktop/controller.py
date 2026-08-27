@@ -92,6 +92,15 @@ class DesktopController(QObject):
     def list_blacklist(self, mid: int):
         return self.app.list_blacklist(mid)
 
+    def add_allowlist(self, mid: int, keyword: str) -> bool:
+        return self.app.add_allowlist(mid, keyword)
+
+    def remove_allowlist(self, mid: int, keyword: str) -> bool:
+        return self.app.remove_allowlist(mid, keyword)
+
+    def list_allowlist(self, mid: int):
+        return self.app.list_allowlist(mid)
+
     def get_up_filter_settings(self, mid: int) -> UpFilterSettings:
         return self.app.get_up_filter_settings(mid)
 

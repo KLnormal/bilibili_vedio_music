@@ -385,6 +385,34 @@ class Repository:
             ).fetchall()
         return [r["keyword"] for r in rows]
 
+    # ------------------------------------------------------------- allowlist --
+    def add_allowlist(self, mid: int, keyword: str) -> bool:
+        """Add a title keyword to an UP's specified-download list."""
+        keyword = keyword.strip()
+        if not keyword:
+            return False
+        with self._lock:
+            cur = self._db.connection.execute(
+                "INSERT OR IGNORE INTO up_allowlist (mid, keyword) VALUES (?, ?)",
+                (mid, keyword),
+            )
+        return cur.rowcount > 0
+
+    def remove_allowlist(self, mid: int, keyword: str) -> bool:
+        with self._lock:
+            cur = self._db.connection.execute(
+                "DELETE FROM up_allowlist WHERE mid = ? AND keyword = ?",
+                (mid, keyword.strip()),
+            )
+        return cur.rowcount > 0
+
+    def list_allowlist(self, mid: int) -> List[str]:
+        with self._lock:
+            rows = self._db.connection.execute(
+                "SELECT keyword FROM up_allowlist WHERE mid = ? ORDER BY id", (mid,)
+            ).fetchall()
+        return [r["keyword"] for r in rows]
+
     # ---------------------------------------------------------- UP filters --
     def get_up_filter_settings(self, mid: int) -> UpFilterSettings:
         with self._lock:

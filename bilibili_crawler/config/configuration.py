@@ -35,6 +35,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_duration": 1800,
         # Whether title blacklist rules are applied before a download.
         "blacklist_enabled": True,
+        "allowlist_enabled": False,
     },
     "download": {
         "save_root": "downloads",

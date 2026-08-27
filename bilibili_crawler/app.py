@@ -245,6 +245,21 @@ class App:
     def list_blacklist(self, mid: int) -> List[str]:
         return self.repo.list_blacklist(mid)
 
+    def add_allowlist(self, mid: int, keyword: str) -> bool:
+        ok = self.repo.add_allowlist(mid, keyword)
+        if ok:
+            self.state.log(f"UP {mid} 指定下载名单添加: {keyword}")
+        return ok
+
+    def remove_allowlist(self, mid: int, keyword: str) -> bool:
+        ok = self.repo.remove_allowlist(mid, keyword)
+        if ok:
+            self.state.log(f"UP {mid} 指定下载名单移除: {keyword}")
+        return ok
+
+    def list_allowlist(self, mid: int) -> List[str]:
+        return self.repo.list_allowlist(mid)
+
     def get_up_filter_settings(self, mid: int) -> UpFilterSettings:
         return self.repo.get_up_filter_settings(mid)
 
@@ -278,10 +293,13 @@ class App:
             max_d = options.max_duration if options.max_duration is not None else (settings.max_duration if settings.max_duration is not None else self.config["filter"]["max_duration"])
             min_date = options.min_datetime if options.date_filter_active else parse_date(settings.min_date)
             max_date = options.max_datetime if options.date_filter_active else parse_date(settings.max_date)
-            blacklist = self.repo.list_blacklist(m) if self.config.get("filter", {}).get("blacklist_enabled", True) else []
+            filter_config = self.config.get("filter", {})
+            blacklist = self.repo.list_blacklist(m) if filter_config.get("blacklist_enabled", True) else []
+            allowlist = self.repo.list_allowlist(m) if filter_config.get("allowlist_enabled", False) else []
             engine = DecisionEngine(
                 min_d, max_d, blacklist,
                 min_date=min_date, max_date=max_date,
+                allowlist_keywords=allowlist,
             )
             for video in self.repo.list_videos(m):
                 if video.download_status not in (DownloadStatus.PENDING, DownloadStatus.FILTERED):
@@ -311,10 +329,13 @@ class App:
             max_d = options.max_duration if options.max_duration is not None else (settings.max_duration if settings.max_duration is not None else self.config["filter"]["max_duration"])
             min_date = options.min_datetime if options.date_filter_active else parse_date(settings.min_date)
             max_date = options.max_datetime if options.date_filter_active else parse_date(settings.max_date)
-            blacklist = self.repo.list_blacklist(m) if self.config.get("filter", {}).get("blacklist_enabled", True) else []
+            filter_config = self.config.get("filter", {})
+            blacklist = self.repo.list_blacklist(m) if filter_config.get("blacklist_enabled", True) else []
+            allowlist = self.repo.list_allowlist(m) if filter_config.get("allowlist_enabled", False) else []
             engine = DecisionEngine(
                 min_d, max_d, blacklist,
                 min_date=min_date, max_date=max_date,
+                allowlist_keywords=allowlist,
             )
             for video in self.repo.list_videos(m):
                 decisions.append((video, engine.decide(video)))

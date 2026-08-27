@@ -301,19 +301,31 @@ class UpRulesDialog(QDialog):
         self.accept()
 
 
-class BlacklistDialog(QDialog):
-    """Manage title keywords for exactly one UP."""
+class _KeywordListDialog(QDialog):
+    """Edit one UP's keyword list (blacklist or specified-download list)."""
+
+    title = "关键词"
+    description = ""
+
+    def _list(self):
+        raise NotImplementedError
+
+    def _add(self, keyword: str) -> bool:
+        raise NotImplementedError
+
+    def _remove(self, keyword: str) -> bool:
+        raise NotImplementedError
 
     def __init__(self, controller: DesktopController, mid: int, parent=None):
         super().__init__(parent)
         self.controller = controller
         self.mid = mid
-        self.setWindowTitle(f"UP {mid} 黑名单")
+        self.setWindowTitle(f"UP {mid} {self.title}")
         self.resize(430, 420)
         root = QVBoxLayout(self)
-        root.addWidget(QLabel("命中标题关键词的视频会在本次准备下载时被过滤。"))
+        root.addWidget(QLabel(self.description))
         self.blacklist = QListWidget()
-        self.blacklist.addItems(controller.list_blacklist(mid))
+        self.blacklist.addItems(self._list())
         self.blacklist.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         root.addWidget(self.blacklist, 1)
         add_row = QHBoxLayout()
@@ -344,14 +356,46 @@ class BlacklistDialog(QDialog):
 
     def save(self):
         wanted = [self.blacklist.item(i).text() for i in range(self.blacklist.count())]
-        current = self.controller.list_blacklist(self.mid)
+        current = self._list()
         for keyword in current:
             if keyword not in wanted:
-                self.controller.remove_blacklist(self.mid, keyword)
+                self._remove(keyword)
         for keyword in wanted:
             if keyword not in current:
-                self.controller.add_blacklist(self.mid, keyword)
+                self._add(keyword)
         self.accept()
+
+
+class BlacklistDialog(_KeywordListDialog):
+    """Manage title blacklist keywords for exactly one UP."""
+
+    title = "黑名单"
+    description = "命中标题关键词的视频会在本次准备下载时被过滤。"
+
+    def _list(self):
+        return self.controller.list_blacklist(self.mid)
+
+    def _add(self, keyword: str) -> bool:
+        return self.controller.add_blacklist(self.mid, keyword)
+
+    def _remove(self, keyword: str) -> bool:
+        return self.controller.remove_blacklist(self.mid, keyword)
+
+
+class AllowlistDialog(_KeywordListDialog):
+    """Manage specified-download keywords for exactly one UP."""
+
+    title = "指定下载名单"
+    description = "仅标题命中指定下载名单关键词的视频会进入下载队列。"
+
+    def _list(self):
+        return self.controller.list_allowlist(self.mid)
+
+    def _add(self, keyword: str) -> bool:
+        return self.controller.add_allowlist(self.mid, keyword)
+
+    def _remove(self, keyword: str) -> bool:
+        return self.controller.remove_allowlist(self.mid, keyword)
 
 
 class UpPage(QWidget):
@@ -538,16 +582,48 @@ class TasksPage(QWidget):
         self.blacklist_settings = _button("设置", self._open_blacklist_settings)
         blacklist_layout.addWidget(self.blacklist_settings, 1, 3)
         filter_layout.addWidget(self.blacklist_box, 0, 5, 2, 2)
+
+        self.allowlist_box = QGroupBox("指定下载名单")
+        self.allowlist_box.setMinimumWidth(300)
+        self.allowlist_box.setMaximumWidth(340)
+        allowlist_layout = QGridLayout(self.allowlist_box)
+        allowlist_layout.setContentsMargins(10, 22, 10, 8)
+        allowlist_layout.setHorizontalSpacing(8)
+        allowlist_layout.setVerticalSpacing(8)
+        self.allowlist_keyword = QLineEdit()
+        self.allowlist_keyword.setPlaceholderText("输入关键词")
+        self.allowlist_confirm = _button("确认", self._add_allowlist_keyword, True)
+        self.allowlist_keyword.returnPressed.connect(self._add_allowlist_keyword)
+        allowlist_layout.addWidget(self.allowlist_keyword, 0, 0)
+        allowlist_layout.addWidget(self.allowlist_confirm, 0, 1)
+        allowlist_layout.addWidget(QLabel("名单配置："), 1, 0)
+        self.allowlist_enabled_button = _button("启用", self._enable_allowlist)
+        self.allowlist_disabled_button = _button("禁用", self._disable_allowlist)
+        for button in (self.allowlist_enabled_button, self.allowlist_disabled_button):
+            button.setCheckable(True)
+            button.setMinimumWidth(58)
+        self.allowlist_enabled_group = QButtonGroup(self)
+        self.allowlist_enabled_group.setExclusive(True)
+        self.allowlist_enabled_group.addButton(self.allowlist_enabled_button)
+        self.allowlist_enabled_group.addButton(self.allowlist_disabled_button)
+        allowlist_layout.addWidget(self.allowlist_enabled_button, 1, 1)
+        allowlist_layout.addWidget(self.allowlist_disabled_button, 1, 2)
+        self.allowlist_settings = _button("设置", self._open_allowlist_settings)
+        allowlist_layout.addWidget(self.allowlist_settings, 1, 3)
+        filter_layout.addWidget(self.allowlist_box, 0, 7, 2, 2)
         # Column 5 is intentionally non-stretching: blacklist management sits
         # directly beside the duration/date controls instead of drifting to
         # the far right as the window grows.
         filter_layout.setColumnStretch(5, 0)
-        filter_layout.setColumnStretch(6, 1)
+        filter_layout.setColumnStretch(6, 0)
+        filter_layout.setColumnStretch(7, 0)
+        filter_layout.setColumnStretch(8, 1)
         self.duration_override.toggled.connect(self._toggle_duration_filter)
         self.date_override.toggled.connect(self._toggle_date_filter)
         self._toggle_duration_filter(False)
         self._toggle_date_filter(False)
         self._load_blacklist_enabled()
+        self._load_allowlist_enabled()
         root.addWidget(self.filter_box)
 
         buttons = QHBoxLayout()
@@ -580,6 +656,7 @@ class TasksPage(QWidget):
         root.addWidget(self.log)
         self.search.textChanged.connect(self._filter)
         self.mid.currentIndexChanged.connect(self._load_blacklist_enabled)
+        self.mid.currentIndexChanged.connect(self._load_allowlist_enabled)
         controller.task_started.connect(self._task_started)
         controller.task_finished.connect(self._task_finished)
         controller.task_failed.connect(self._task_failed)
@@ -691,7 +768,7 @@ class TasksPage(QWidget):
     def _disable_blacklist(self):
         self._set_blacklist_enabled(False)
 
-    def _selected_blacklist_mid(self) -> Optional[int]:
+    def _selected_keyword_mid(self) -> Optional[int]:
         mid = self.mid_value()
         if mid is None:
             QMessageBox.information(self, "请选择 UP", "请先在上方选择一个具体 UP，再管理其黑名单。")
@@ -701,7 +778,7 @@ class TasksPage(QWidget):
         keyword = self.blacklist_keyword.text().strip()
         if not keyword:
             return
-        mid = self._selected_blacklist_mid()
+        mid = self._selected_keyword_mid()
         if mid is None:
             return
         if self.controller.add_blacklist(mid, keyword):
@@ -711,11 +788,47 @@ class TasksPage(QWidget):
             QMessageBox.information(self, "黑名单", "该关键词已经存在。")
 
     def _open_blacklist_settings(self):
-        mid = self._selected_blacklist_mid()
+        mid = self._selected_keyword_mid()
         if mid is None:
             return
         if BlacklistDialog(self.controller, mid, self).exec() == QDialog.DialogCode.Accepted:
             self.controller.app.state.log(f"UP {mid} 黑名单配置已更新")
+
+    def _load_allowlist_enabled(self, *_args):
+        enabled = bool(self.controller.settings().get("filter", {}).get("allowlist_enabled", False))
+        self.allowlist_enabled_button.setChecked(enabled)
+        self.allowlist_disabled_button.setChecked(not enabled)
+
+    def _set_allowlist_enabled(self, enabled: bool) -> None:
+        config = self.controller.settings()
+        config.setdefault("filter", {})["allowlist_enabled"] = bool(enabled)
+        self.controller.save_settings(config)
+        self._load_allowlist_enabled()
+
+    def _enable_allowlist(self):
+        self._set_allowlist_enabled(True)
+
+    def _disable_allowlist(self):
+        self._set_allowlist_enabled(False)
+
+    def _add_allowlist_keyword(self):
+        keyword = self.allowlist_keyword.text().strip()
+        if not keyword:
+            return
+        mid = self._selected_keyword_mid()
+        if mid is None:
+            return
+        if self.controller.add_allowlist(mid, keyword):
+            self.allowlist_keyword.clear()
+        else:
+            QMessageBox.information(self, "指定下载名单", "该关键词已经存在。")
+
+    def _open_allowlist_settings(self):
+        mid = self._selected_keyword_mid()
+        if mid is None:
+            return
+        if AllowlistDialog(self.controller, mid, self).exec() == QDialog.DialogCode.Accepted:
+            self.controller.app.state.log(f"UP {mid} 指定下载名单配置已更新")
 
     def options(self):
         quality = self.quality.currentText()

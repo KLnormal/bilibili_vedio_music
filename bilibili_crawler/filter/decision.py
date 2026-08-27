@@ -36,11 +36,13 @@ class DecisionEngine:
         blacklist_keywords: Iterable[str] = (),
         min_date: Optional[datetime] = None,
         max_date: Optional[datetime] = None,
+        allowlist_keywords: Iterable[str] = (),
     ):
         self._duration = DurationFilter(min_duration, max_duration)
         self._blacklist = list(blacklist_keywords)
         self._min_date = min_date
         self._max_date = max_date
+        self._allowlist = list(allowlist_keywords)
 
     def decide(self, video: Video, file_exists: Optional[bool] = None) -> Decision:
         """Evaluate all rules for one video and return a Decision."""
@@ -76,6 +78,12 @@ class DecisionEngine:
                 return Decision("FILTERED", reason="date_out_of_range", checks=checks)
             if self._max_date is not None and created_date > self._max_date.date():
                 return Decision("FILTERED", reason="date_out_of_range", checks=checks)
+
+        if self._allowlist:
+            allowed = blacklist_hit(video.title, self._allowlist)
+            checks["allowlist"] = allowed
+            if not allowed:
+                return Decision("FILTERED", reason="allowlist_miss", checks=checks)
 
         hit = blacklist_hit(video.title, self._blacklist)
         checks["blacklist"] = hit

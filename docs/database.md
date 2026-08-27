@@ -9,6 +9,7 @@
 - `up`：UP 主基本信息。
 - `video`：BV 视频元数据和下载状态。
 - `up_blacklist`：每个 UP 独立的标题黑名单。
+- `up_allowlist`：每个 UP 独立的指定下载名单关键词。
 - `up_filter_settings`：每个 UP 独立的时长/发布时间筛选设置；空值继承全局默认值。
 
 ## 关键接口
