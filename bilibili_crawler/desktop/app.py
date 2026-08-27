@@ -12,7 +12,7 @@ from typing import Optional
 from PySide6.QtCore import QTimer, Qt, QSize
 from PySide6.QtGui import QColor, QFont, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QDoubleSpinBox, QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QInputDialog,
     QPushButton, QProgressBar, QScrollArea, QSpinBox, QStackedWidget,
@@ -497,11 +497,42 @@ class TasksPage(QWidget):
         filter_layout.addWidget(self.min_date, 1, 2)
         filter_layout.addWidget(QLabel("到"), 1, 3)
         filter_layout.addWidget(self.max_date, 1, 4)
+
+        # Keep blacklist management beside the date filters so the controls
+        # remain visible while configuring a one-off download task.
+        self.blacklist_box = QGroupBox("黑名单管理")
+        blacklist_layout = QGridLayout(self.blacklist_box)
+        blacklist_layout.setContentsMargins(10, 22, 10, 8)
+        blacklist_layout.setHorizontalSpacing(8)
+        blacklist_layout.setVerticalSpacing(8)
+        self.blacklist_keyword = QLineEdit()
+        self.blacklist_keyword.setPlaceholderText("输入关键词")
+        self.blacklist_confirm = _button("确认", self._add_blacklist_keyword, True)
+        self.blacklist_keyword.returnPressed.connect(self._add_blacklist_keyword)
+        blacklist_layout.addWidget(self.blacklist_keyword, 0, 0)
+        blacklist_layout.addWidget(self.blacklist_confirm, 0, 1)
+        blacklist_layout.addWidget(QLabel("黑名单配置："), 1, 0)
+        self.blacklist_enabled_button = _button("启用", self._enable_blacklist)
+        self.blacklist_disabled_button = _button("禁用", self._disable_blacklist)
+        for button in (self.blacklist_enabled_button, self.blacklist_disabled_button):
+            button.setCheckable(True)
+            button.setMinimumWidth(58)
+        self.blacklist_enabled_group = QButtonGroup(self)
+        self.blacklist_enabled_group.setExclusive(True)
+        self.blacklist_enabled_group.addButton(self.blacklist_enabled_button)
+        self.blacklist_enabled_group.addButton(self.blacklist_disabled_button)
+        blacklist_layout.addWidget(self.blacklist_enabled_button, 1, 1)
+        blacklist_layout.addWidget(self.blacklist_disabled_button, 1, 2)
+        self.blacklist_settings = _button("设置", self._open_blacklist_settings)
+        blacklist_layout.addWidget(self.blacklist_settings, 1, 3)
+        filter_layout.addWidget(self.blacklist_box, 0, 6, 2, 2)
         filter_layout.setColumnStretch(5, 1)
+        filter_layout.setColumnStretch(6, 1)
         self.duration_override.toggled.connect(self._toggle_duration_filter)
         self.date_override.toggled.connect(self._toggle_date_filter)
         self._toggle_duration_filter(False)
         self._toggle_date_filter(False)
+        self._load_blacklist_enabled()
         root.addWidget(self.filter_box)
 
         buttons = QHBoxLayout()
@@ -533,6 +564,7 @@ class TasksPage(QWidget):
         self._last_log_text = ""
         root.addWidget(self.log)
         self.search.textChanged.connect(self._filter)
+        self.mid.currentIndexChanged.connect(self._load_blacklist_enabled)
         controller.task_started.connect(self._task_started)
         controller.task_finished.connect(self._task_finished)
         controller.task_failed.connect(self._task_failed)
@@ -626,6 +658,49 @@ class TasksPage(QWidget):
     def _toggle_date_filter(self, enabled: bool):
         self.min_date.setEnabled(enabled)
         self.max_date.setEnabled(enabled)
+
+    def _load_blacklist_enabled(self, *_args):
+        enabled = bool(self.controller.settings().get("filter", {}).get("blacklist_enabled", True))
+        self.blacklist_enabled_button.setChecked(enabled)
+        self.blacklist_disabled_button.setChecked(not enabled)
+
+    def _set_blacklist_enabled(self, enabled: bool) -> None:
+        config = self.controller.settings()
+        config.setdefault("filter", {})["blacklist_enabled"] = bool(enabled)
+        self.controller.save_settings(config)
+        self._load_blacklist_enabled()
+
+    def _enable_blacklist(self):
+        self._set_blacklist_enabled(True)
+
+    def _disable_blacklist(self):
+        self._set_blacklist_enabled(False)
+
+    def _selected_blacklist_mid(self) -> Optional[int]:
+        mid = self.mid_value()
+        if mid is None:
+            QMessageBox.information(self, "请选择 UP", "请先在上方选择一个具体 UP，再管理其黑名单。")
+        return mid
+
+    def _add_blacklist_keyword(self):
+        keyword = self.blacklist_keyword.text().strip()
+        if not keyword:
+            return
+        mid = self._selected_blacklist_mid()
+        if mid is None:
+            return
+        if self.controller.add_blacklist(mid, keyword):
+            self.blacklist_keyword.clear()
+            self.controller.app.state.log(f"UP {mid} 黑名单已保存：{keyword}")
+        else:
+            QMessageBox.information(self, "黑名单", "该关键词已经存在。")
+
+    def _open_blacklist_settings(self):
+        mid = self._selected_blacklist_mid()
+        if mid is None:
+            return
+        if BlacklistDialog(self.controller, mid, self).exec() == QDialog.DialogCode.Accepted:
+            self.controller.app.state.log(f"UP {mid} 黑名单配置已更新")
 
     def options(self):
         quality = self.quality.currentText()

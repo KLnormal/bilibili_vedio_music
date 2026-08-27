@@ -174,6 +174,32 @@ class DesktopControlsTest(unittest.TestCase):
         dialog.save()
         self.assertEqual(self.app.repo.list_blacklist(1), ["切片"])
 
+    def test_task_page_blacklist_controls_persist_and_manage_selected_up(self):
+        tasks = self.window.tasks
+        tasks.refresh_ups()
+        tasks.mid.setCurrentIndex(tasks.mid.findData(1))
+        tasks.blacklist_keyword.setText("广告")
+        tasks.blacklist_confirm.click()
+        self.assertEqual(self.app.repo.list_blacklist(1), ["广告"])
+
+        tasks.blacklist_disabled_button.click()
+        self.assertFalse(self.app.config["filter"]["blacklist_enabled"])
+        saved = yaml.safe_load(self.config.read_text(encoding="utf-8"))
+        self.assertFalse(saved["filter"]["blacklist_enabled"])
+
+        tasks.blacklist_enabled_button.click()
+        self.assertTrue(self.app.config["filter"]["blacklist_enabled"])
+
+    def test_blacklist_enabled_setting_controls_preview(self):
+        self.app.repo.insert_video(Video(bvid="BVblocked", mid=1, title="广告通知", duration=600))
+        self.app.add_blacklist(1, "广告")
+        tasks = self.window.tasks
+        self.assertEqual(self.app.preview(1, tasks.options())["stats"].get("FILTERED"), 1)
+        config = self.window.controller.settings()
+        config["filter"]["blacklist_enabled"] = False
+        self.window.controller.save_settings(config)
+        self.assertEqual(self.app.preview(1, tasks.options())["stats"].get("READY"), 1)
+
     def test_scan_status_bar_reflects_busy_and_finished(self):
         self.app.state.set_scan("测试 UP", "获取投稿列表...")
         self.app.state.set_scan_progress(3, 30, 4)

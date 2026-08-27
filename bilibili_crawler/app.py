@@ -278,8 +278,9 @@ class App:
             max_d = options.max_duration if options.max_duration is not None else (settings.max_duration if settings.max_duration is not None else self.config["filter"]["max_duration"])
             min_date = options.min_datetime if options.date_filter_active else parse_date(settings.min_date)
             max_date = options.max_datetime if options.date_filter_active else parse_date(settings.max_date)
+            blacklist = self.repo.list_blacklist(m) if self.config.get("filter", {}).get("blacklist_enabled", True) else []
             engine = DecisionEngine(
-                min_d, max_d, self.repo.list_blacklist(m),
+                min_d, max_d, blacklist,
                 min_date=min_date, max_date=max_date,
             )
             for video in self.repo.list_videos(m):
@@ -310,8 +311,9 @@ class App:
             max_d = options.max_duration if options.max_duration is not None else (settings.max_duration if settings.max_duration is not None else self.config["filter"]["max_duration"])
             min_date = options.min_datetime if options.date_filter_active else parse_date(settings.min_date)
             max_date = options.max_datetime if options.date_filter_active else parse_date(settings.max_date)
+            blacklist = self.repo.list_blacklist(m) if self.config.get("filter", {}).get("blacklist_enabled", True) else []
             engine = DecisionEngine(
-                min_d, max_d, self.repo.list_blacklist(m),
+                min_d, max_d, blacklist,
                 min_date=min_date, max_date=max_date,
             )
             for video in self.repo.list_videos(m):

@@ -30,7 +30,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "retry_backoff": 1.0,
         "request_interval": 0.3,
     },
-    "filter": {"min_duration": 300, "max_duration": 1800},
+    "filter": {
+        "min_duration": 300,
+        "max_duration": 1800,
+        # Whether title blacklist rules are applied before a download.
+        "blacklist_enabled": True,
+    },
     "download": {
         "save_root": "downloads",
         "max_speed_mbps": 40,
