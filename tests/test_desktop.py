@@ -129,7 +129,8 @@ class DesktopControlsTest(unittest.TestCase):
         with mock.patch("bilibili_crawler.desktop.app.sys.platform", "win32"):
             with mock.patch.dict(os.environ, {"QT_QPA_PLATFORM": "offscreen"}, clear=False):
                 os.environ.pop("BILIBILI_DESKTOP_HEADLESS", None)
-                _prepare_interactive_qt_platform()
+                with mock.patch("bilibili_crawler.desktop.app.sys.stderr", None):
+                    _prepare_interactive_qt_platform()
                 self.assertNotIn("QT_QPA_PLATFORM", os.environ)
 
             with mock.patch.dict(os.environ, {

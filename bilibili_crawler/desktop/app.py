@@ -892,11 +892,13 @@ def _prepare_interactive_qt_platform() -> None:
     }
     if platform in {"offscreen", "minimal", "minimalegl"} and not allow_headless:
         os.environ.pop("QT_QPA_PLATFORM", None)
-        print(
-            "[desktop] removed inherited QT_QPA_PLATFORM=%s; interactive Windows UI is enabled."
-            % platform,
-            file=sys.stderr,
-        )
+        stream = sys.stderr or getattr(sys, "__stderr__", None)
+        if stream is not None:
+            print(
+                "[desktop] removed inherited QT_QPA_PLATFORM=%s; interactive Windows UI is enabled."
+                % platform,
+                file=stream,
+            )
 
 
 def run_desktop(argv=None) -> int:
