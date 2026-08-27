@@ -72,6 +72,18 @@ BV 号去重
 
 当前验证中已经确认 1080P 与 4K 下载链路可行。
 
+## Windows 桌面 EXE
+
+可使用 PyInstaller 生成单文件桌面程序，用户无需预装 Python：
+
+```powershell
+.\packaging\build_windows.ps1
+```
+
+生成的 `dist\BilibiliVideoWorkbench.exe` 双击后会在首次运行时检查随包依赖，
+初始化 `%LOCALAPPDATA%\BilibiliVideoWorkbench` 配置目录，并在缺少 ffmpeg 时
+尝试安装便携版，然后启动 PySide6 桌面工作台。详细说明见 `docs/packaging.md`。
+
 ### 当前 v0.1 遗留项
 
 来自现有 `PROGRESS.md`：
