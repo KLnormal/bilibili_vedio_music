@@ -12,8 +12,8 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import yaml
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 
 from bilibili_crawler.app import App
@@ -73,7 +73,6 @@ class DesktopControlsTest(unittest.TestCase):
         self.assertEqual((options.quality, options.media_type), ("1080p+", "audio"))
 
     def test_navigation_and_filter_controls_accept_mouse_clicks(self):
-        from PySide6.QtWidgets import QPushButton
         nav = next(button for button in self.window.findChildren(QPushButton)
                    if button.text() == "任务与视频")
         QTest.mouseClick(nav, Qt.MouseButton.LeftButton)
@@ -82,6 +81,28 @@ class DesktopControlsTest(unittest.TestCase):
         QTest.mouseClick(self.window.tasks.duration_override, Qt.MouseButton.LeftButton)
         self.qt.processEvents()
         self.assertTrue(self.window.tasks.min_duration.isEnabled())
+
+    def test_task_filter_caption_controls_buttons_and_status_do_not_overlap(self):
+        tasks = self.window.tasks
+        self.window.pages.setCurrentWidget(tasks)
+        self.qt.processEvents()
+
+        filter_top = tasks.filter_box.geometry().top()
+        duration_top = tasks.duration_override.mapTo(tasks, QPoint(0, 0)).y()
+        date_top = tasks.date_override.mapTo(tasks, QPoint(0, 0)).y()
+        download_button = next(
+            button for button in tasks.findChildren(QPushButton)
+            if button.text() == "开始下载"
+        )
+        button_top = download_button.mapTo(tasks, QPoint(0, 0)).y()
+        status_top = tasks.task_status.mapTo(tasks, QPoint(0, 0)).y()
+
+        # The group title occupies the upper caption area; each filter row,
+        # action row and status label must begin below the preceding region.
+        self.assertGreaterEqual(duration_top, filter_top + 28)
+        self.assertGreater(date_top, duration_top + tasks.duration_override.height())
+        self.assertGreater(button_top, tasks.filter_box.geometry().bottom())
+        self.assertGreater(status_top, button_top + download_button.height())
 
     def test_desktop_window_can_reclaim_foreground_focus(self):
         """The interactive entry point must not leave a visible window inert."""

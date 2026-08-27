@@ -12,7 +12,7 @@
 | 版本 | v0.2.0 |
 | 里程碑 | v0.1.0 十项目标已实现；v0.2.0 八个 Phase **全部完成** |
 | 当前分支 | `bilibili_branch_download` |
-| 测试 | 核心 + 桌面 + 下载器离线测试 61/61 通过 |
+| 测试 | 核心 + 桌面 + 下载器离线测试 62/62 通过 |
 | 关键验证 | ✅ 1080P / 4K 下载链路可行（ffprobe 实测） |
 
 ---
@@ -79,7 +79,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | app | `app.py` | ✅ 稳定 | 新增 `status`/`check_files`/`download_bv` |
 | options | `options.py` | ✅ 稳定 | `DownloadOptions` 统一参数对象 + 质量映射 |
 | tests | `tests/{test_core,test_downloader,e2e_demo,test_desktop}.py` | ✅ 稳定 | 核心、分页续扫、下载器模式与桌面交互离线测试 |
-| desktop | `desktop/{app,controller,workers}.py` | ✅ 稳定 | PySide6 工作台、UP 级筛选、后台任务、登录与设置；Windows 前台激活与可交互平台保护 |
+| desktop | `desktop/{app,controller,workers}.py` | ✅ 稳定 | PySide6 工作台、UP 级筛选、后台任务、登录与设置；Windows 前台激活、可交互平台保护及筛选区防重叠布局 |
 
 ---
 
@@ -97,6 +97,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | 2026-08-24 | 旧库残缺记录触发增量短路 | 新增 `scan_complete`；旧库默认为未完成，先全量补扫再启用增量扫描。 |
 | 2026-08-24 | Windows 桌面窗口看得到但无法点击 | 桌面启动时清除继承的 `QT_QPA_PLATFORM=offscreen/minimal`，并在原生窗口创建后提升到前台、激活焦点；`BILIBILI_DESKTOP_HEADLESS=1` 可显式保留无头模式。 |
 | 2026-08-24 | 音频无 DASH fallback 使用未定义清晰度 | 将本次任务的有效 qn 传入音频 fallback，并补齐 progressive/DASH/audio 离线覆盖。 |
+| 2026-08-28 | 任务页筛选标题、控件和状态文字挤在一起 | 为筛选组标题预留顶部空间，固定两行筛选的间距和最小高度，并分隔操作按钮与状态行。 |
 
 ---
 

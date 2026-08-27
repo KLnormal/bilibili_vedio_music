@@ -444,10 +444,13 @@ class TasksPage(QWidget):
         super().__init__()
         self.controller = controller
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 14, 16, 16)
+        root.setSpacing(10)
         title = QLabel("任务与视频")
         title.setObjectName("pageTitle")
         root.addWidget(title)
         controls = QHBoxLayout()
+        controls.setSpacing(8)
         self.mid = QComboBox()
         self.mid.addItem("全部 UP", None)
         self.quality = QComboBox()
@@ -464,14 +467,26 @@ class TasksPage(QWidget):
 
         self.filter_box = QGroupBox("本次下载筛选（仅本次任务，不修改 UP 默认规则）")
         filter_layout = QGridLayout(self.filter_box)
+        # QGroupBox draws its caption inside the frame.  Reserve a complete
+        # caption row so the first checkbox never overlaps that caption.
+        filter_layout.setContentsMargins(16, 30, 16, 14)
+        filter_layout.setHorizontalSpacing(10)
+        filter_layout.setVerticalSpacing(10)
+        self.filter_box.setMinimumHeight(122)
         self.duration_override = QCheckBox("覆盖时长")
+        self.duration_override.setMinimumWidth(116)
         self.min_duration = QSpinBox(); self.min_duration.setRange(0, 86400); self.min_duration.setValue(0)
         self.min_duration.setSuffix(" 秒"); self.min_duration.setSpecialValueText("不限")
+        self.min_duration.setMinimumWidth(170)
         self.max_duration = QSpinBox(); self.max_duration.setRange(0, 86400); self.max_duration.setValue(86400)
         self.max_duration.setSuffix(" 秒")
+        self.max_duration.setMinimumWidth(170)
         self.date_override = QCheckBox("覆盖发布时间")
+        self.date_override.setMinimumWidth(116)
         self.min_date = QLineEdit("0"); self.min_date.setPlaceholderText("最早 YYYY.MM.DD，0=不限")
         self.max_date = QLineEdit("0"); self.max_date.setPlaceholderText("最晚 YYYY.MM.DD，0=不限")
+        self.min_date.setMinimumWidth(170)
+        self.max_date.setMinimumWidth(170)
         filter_layout.addWidget(self.duration_override, 0, 0)
         filter_layout.addWidget(QLabel("从"), 0, 1)
         filter_layout.addWidget(self.min_duration, 0, 2)
@@ -490,6 +505,8 @@ class TasksPage(QWidget):
         root.addWidget(self.filter_box)
 
         buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 2, 0, 2)
+        buttons.setSpacing(8)
         for text, slot, primary in [("扫描", self.scan, False), ("预览", self.preview, False),
                                     ("开始下载", self.download, True), ("暂停/恢复", self.pause, False),
                                     ("停止", self.stop, False), ("重试失败", self.retry, False)]:
@@ -497,6 +514,7 @@ class TasksPage(QWidget):
         buttons.addStretch()
         root.addLayout(buttons)
         self.task_status = QLabel("任务未启动")
+        self.task_status.setMinimumHeight(20)
         self.task_progress = QProgressBar()
         self.task_progress.setRange(0, 100)
         self.task_progress.setValue(0)
