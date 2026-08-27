@@ -105,3 +105,16 @@ class Video:
             download_error=row["download_error"] or "",
             filter_reason=row["filter_reason"] if "filter_reason" in row else "",
         )
+
+
+@dataclass
+class MediaDownload:
+    """Download state for one video representation (video or audio)."""
+
+    bvid: str
+    media_type: str
+    status: DownloadStatus = DownloadStatus.PENDING
+    download_path: str = ""
+    download_time: Optional[str] = None
+    download_error: str = ""
+    filter_reason: str = ""

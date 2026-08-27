@@ -38,7 +38,8 @@ Windows 上建议使用项目目录内的虚拟环境。直接安装到 Python S
   并选择清晰度、视频/音频类型；右侧黑名单管理支持快速添加关键词、启用/禁用
   黑名单筛选，以及通过“设置”弹窗批量增删当前 UP 的关键词；旁边的“指定下载名单”
   可限制为命中关键词的视频，和黑名单同时启用时优先排除黑名单；不修改 UP 默认规则。
-  时长和发布时间输入框始终可编辑，勾选“覆盖”后才会应用到本次任务。
+  时长和发布时间输入框始终可编辑，修改后直接应用于下一次预览/下载；“恢复默认”
+  可重新载入当前 UP 或全局默认规则。
 - 筛选布局：筛选标题、时长和发布时间各自占用独立区域；顶部 UP/清晰度/类型
   控件加宽，黑名单管理固定紧邻时长/日期区域；操作按钮、下载状态、扫描状态依次
   排列，避免在高分辨率及缩放显示器上重叠。
@@ -53,10 +54,13 @@ Windows 上建议使用项目目录内的虚拟环境。直接安装到 Python S
 
 主要操作包括：
 
-- `start_scan(mid)` / `start_check(mid)` / `start_preview(mid, options)`
+- `start_scan(mid)` / `start_check(mid, media_type)` / `start_preview(mid, options)`
 - `start_download(mid, options)` / `start_retry(mid)`
 - `start_add_up(mid)` / `start_login()`
 - `pause(value)` / `stop()` / `save_settings(config)`
+
+停止会同时通知扫描、预览和下载 worker；下载中的 HTTP/ffmpeg 子进程被取消，
+媒体记录恢复为 PENDING，线程真正退出后页面才恢复可操作状态。
 
 ## 登录
 

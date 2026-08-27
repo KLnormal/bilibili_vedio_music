@@ -56,10 +56,8 @@ class DesktopControlsTest(unittest.TestCase):
 
     def test_task_options_override_duration_and_date(self):
         tasks = self.window.tasks
-        tasks.duration_override.setChecked(True)
         tasks.min_duration.setValue(120)
         tasks.max_duration.setValue(600)
-        tasks.date_override.setChecked(True)
         tasks.min_date.setText("2025.01.01")
         tasks.max_date.setText("2025.12.31")
         tasks.quality.setCurrentText("1080p+")
@@ -80,8 +78,6 @@ class DesktopControlsTest(unittest.TestCase):
         self.assertIs(self.window.pages.currentWidget(), self.window.tasks)
         self.assertTrue(self.window.tasks.min_duration.isEnabled())
         self.assertTrue(self.window.tasks.min_date.isEnabled())
-        QTest.mouseClick(self.window.tasks.duration_override, Qt.MouseButton.LeftButton)
-        self.qt.processEvents()
         self.assertTrue(self.window.tasks.min_duration.isEnabled())
 
     def test_task_filter_caption_controls_buttons_and_status_do_not_overlap(self):
@@ -143,6 +139,16 @@ class DesktopControlsTest(unittest.TestCase):
         ]
         self.assertEqual(visible, [True, False])
 
+    def test_media_selector_uses_independent_download_status(self):
+        self.app.repo.insert_video(Video(bvid="BVmedia", mid=1, title="媒体测试", duration=600))
+        self.app.repo.update_download_status("BVmedia", DownloadStatus.DOWNLOADED, path="x.mp4")
+        tasks = self.window.tasks
+        tasks.refresh()
+        self.assertEqual(tasks.table.item(0, 5).text(), DownloadStatus.DOWNLOADED.value)
+        tasks.media.setCurrentText("audio")
+        self.qt.processEvents()
+        self.assertEqual(tasks.table.item(0, 5).text(), DownloadStatus.PENDING.value)
+
     def test_desktop_entry_removes_inherited_headless_qt_platform(self):
         # Tests themselves use the offscreen Qt plugin, so patch the platform
         # marker only while exercising the Windows startup guard.
@@ -163,10 +169,9 @@ class DesktopControlsTest(unittest.TestCase):
 
     def test_task_options_default_to_up_or_global_rules(self):
         options = self.window.tasks.options()
-        self.assertIsNone(options.min_duration)
-        self.assertIsNone(options.max_duration)
-        self.assertIsNone(options.min_date)
-        self.assertFalse(options.date_filter_active)
+        self.assertEqual((options.min_duration, options.max_duration), (300, 1800))
+        self.assertEqual((options.min_date, options.max_date), ("0", "0"))
+        self.assertTrue(options.date_filter_active)
 
     def test_task_options_are_used_by_preview_rules(self):
         created = int(datetime(2025, 6, 1).timestamp())
@@ -177,10 +182,8 @@ class DesktopControlsTest(unittest.TestCase):
             bvid="BVlong", mid=1, title="时长过长", duration=900, created=created,
         ))
         tasks = self.window.tasks
-        tasks.duration_override.setChecked(True)
         tasks.min_duration.setValue(120)
         tasks.max_duration.setValue(600)
-        tasks.date_override.setChecked(True)
         tasks.min_date.setText("2025.01.01")
         tasks.max_date.setText("2025.12.31")
         result = self.app.preview(1, tasks.options())
@@ -279,8 +282,8 @@ class DesktopControlsTest(unittest.TestCase):
             self.qt.processEvents()
 
         self.assertFalse(self.window.controller.is_running("download"))
-        downloaded = self.app.repo.get_video("BVdownload")
-        self.assertEqual(downloaded.download_status, DownloadStatus.DOWNLOADED, downloaded.download_error)
+        downloaded = self.app.repo.get_media("BVdownload", "audio")
+        self.assertEqual(downloaded.status, DownloadStatus.DOWNLOADED, downloaded.download_error)
         self.assertTrue(output.is_file())
         self.assertEqual(calls, [("BVdownload", "测试 UP", "audio", 112)])
 

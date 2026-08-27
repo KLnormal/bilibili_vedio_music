@@ -201,6 +201,20 @@ class RepositoryTest(unittest.TestCase):
         self.assertEqual(video.download_path, "p.mp4")
         self.assertIsNotNone(video.download_time)
 
+    def test_video_and_audio_download_states_are_independent(self):
+        self.repo.upsert_up(Up(mid=1, name="A"))
+        self.repo.insert_video(Video(bvid="BVmedia", mid=1, title="t"))
+        self.repo.update_download_status("BVmedia", DownloadStatus.DOWNLOADED, path="t.mp4")
+        self.assertEqual(self.repo.get_media("BVmedia", "video").status, DownloadStatus.DOWNLOADED)
+        self.assertEqual(self.repo.get_media("BVmedia", "audio").status, DownloadStatus.PENDING)
+        self.assertEqual(self.repo.count_by_status(1, "audio")["PENDING"], 1)
+        claimed = self.repo.claim_next_pending(1, "audio")
+        self.assertEqual(claimed.bvid, "BVmedia")
+        self.repo.update_download_status("BVmedia", DownloadStatus.DOWNLOADED,
+                                         path="t.m4a", media_type="audio")
+        self.assertEqual(self.repo.get_media("BVmedia", "video").download_path, "t.mp4")
+        self.assertEqual(self.repo.get_media("BVmedia", "audio").download_path, "t.m4a")
+
     def test_failed_retry(self):
         self.repo.upsert_up(Up(mid=1, name="A"))
         self.repo.insert_video(Video(bvid="BV1x", mid=1, title="t"))
@@ -373,6 +387,8 @@ class BlacklistRepositoryTest(unittest.TestCase):
         cols = [r[1] for r in db.connection.execute("PRAGMA table_info(video)")]
         self.assertIn("filter_reason", cols)
         self.assertEqual(repo.get_video("BV1a").download_status, DownloadStatus.FILTERED)
+        self.assertEqual(repo.get_media("BV1a", "video").status, DownloadStatus.FILTERED)
+        self.assertEqual(repo.get_media("BV1a", "audio").status, DownloadStatus.PENDING)
         db.close()
 
 
@@ -489,6 +505,16 @@ class CheckFilesTest(unittest.TestCase):
         after = self.app.repo.get_video("BV1a").download_status
         self.assertEqual(before, after)  # dry-run must not change state
         self.assertEqual(result["stats"].get("READY"), 1)
+
+    def test_prepare_audio_is_independent_from_downloaded_video(self):
+        self.app.repo.upsert_up(Up(mid=1, name="A"))
+        self.app.repo.insert_video(Video(bvid="BVmedia", mid=1, title="音频测试", duration=600))
+        self.app.repo.update_download_status("BVmedia", DownloadStatus.DOWNLOADED, path="x.mp4")
+        options = DownloadOptions(media_type="audio", min_duration=300, max_duration=1800)
+        result = self.app.prepare_download(1, options)
+        self.assertEqual(result["ready"], 1)
+        self.assertEqual(self.app.repo.get_media("BVmedia", "audio").status, DownloadStatus.PENDING)
+        self.assertEqual(self.app.repo.get_media("BVmedia", "video").status, DownloadStatus.DOWNLOADED)
 
     def test_download_bv_bypasses_blacklist(self):
         # A BV whose title hits the UP blacklist must still download when

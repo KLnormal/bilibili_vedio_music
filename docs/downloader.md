@@ -25,11 +25,14 @@
 ```
 
 所有下载先写 `.part` 文件，成功后 `Path.replace` 到最终路径；失败会删除临时
-文件并由任务管理器写入 `FAILED`。音频 fallback 会继续使用本次任务的实际 qn，
-不会悄悄退回全局清晰度配置。
+文件并由任务管理器写入 `FAILED`。用户停止会中断 HTTP/ffmpeg，清理临时文件并
+恢复为 `PENDING`。Windows 下 ffmpeg 以 `CREATE_NO_WINDOW` 启动。音频 fallback
+会继续使用本次任务的实际 qn，不会悄悄退回全局清晰度配置。
 
 ## 最近更新
 
+2026-08-28：增加媒体类型独立状态、取消令牌和无窗口 ffmpeg 调用；任务管理器
+按 `DownloadOptions.media_type` 只认领对应媒体记录，同一 BV 可独立生成 MP4/M4A。
 2026-08-24：修复音频无 DASH 时 fallback 引用未定义清晰度变量的问题；将本次任务
 的有效 qn 传入音频路径，并新增 progressive、DASH、音频直流和音频 fallback 离线
 测试。

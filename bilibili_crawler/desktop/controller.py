@@ -53,13 +53,13 @@ class DesktopController(QObject):
     def list_ups(self):
         return self.app.list_ups()
 
-    def list_videos(self, mid=None):
-        return self.app.repo.list_videos(mid)
+    def list_videos(self, mid=None, media_type="video"):
+        return self.app.repo.list_videos(mid, media_type)
 
-    def status(self, mid=None) -> dict:
-        result = self.app.status(mid)
+    def status(self, mid=None, media_type="video") -> dict:
+        result = self.app.status(mid, media_type)
         missing = 0
-        for video in self.app.repo.list_downloaded(mid):
+        for video in self.app.repo.list_downloaded(mid, media_type):
             if not video.download_path or not Path(video.download_path).is_file():
                 missing += 1
         result["counts"] = dict(result["counts"])
@@ -159,11 +159,11 @@ class DesktopController(QObject):
     def start_scan(self, mid: Optional[int] = None) -> bool:
         return self._start("scan", lambda cancel, worker: self.app.scan(mid), mid)
 
-    def start_check(self, mid: Optional[int] = None) -> bool:
-        return self._start("check", lambda cancel, worker: self.app.check_files(mid), mid)
+    def start_check(self, mid: Optional[int] = None, media_type: str = "video") -> bool:
+        return self._start("check", lambda cancel, worker: self.app.check_files(mid, media_type), mid)
 
-    def start_retry(self, mid: Optional[int] = None) -> bool:
-        return self._start("retry", lambda cancel, worker: self.app.reset_failed(mid), mid)
+    def start_retry(self, mid: Optional[int] = None, media_type: str = "video") -> bool:
+        return self._start("retry", lambda cancel, worker: self.app.reset_failed(mid, media_type), mid)
 
     def start_preview(self, mid: Optional[int], options: DownloadOptions) -> bool:
         return self._start("preview", lambda cancel, worker: self.app.preview(mid, options), mid)
@@ -176,14 +176,14 @@ class DesktopController(QObject):
             self.app.download_manager.start()
             try:
                 while not cancel.is_set() and not self.app.state.stopped:
-                    counts = self.app.repo.count_by_status(mid)
+                    counts = self.app.repo.count_by_status(mid, options.media_type)
                     if counts.get("PENDING", 0) + counts.get("DOWNLOADING", 0) == 0:
                         break
                     time.sleep(0.25)
             finally:
                 self.app.download_manager.stop()
                 self.app.download_manager.join(timeout=10)
-            return {"prepared": prepared, "status": self.status(mid)}
+            return {"prepared": prepared, "status": self.status(mid, options.media_type)}
 
         return self._start("download", work, mid)
 

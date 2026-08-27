@@ -455,7 +455,7 @@ class UpPage(QWidget):
         self.controller.start_scan(self.selected_mid())
 
     def check(self):
-        self.controller.start_check(self.selected_mid())
+        self.controller.start_check(self.selected_mid(), "video")
 
     def rules(self):
         mid = self.selected_mid()
@@ -516,6 +516,8 @@ class TasksPage(QWidget):
         for label, widget in [("UP", self.mid), ("清晰度", self.quality), ("类型", self.media)]:
             controls.addWidget(QLabel(label))
             controls.addWidget(widget)
+        self.reset_filters = _button("恢复默认", self._load_filter_defaults)
+        controls.addWidget(self.reset_filters)
         controls.addWidget(self.search, 1)
         root.addLayout(controls)
 
@@ -527,8 +529,8 @@ class TasksPage(QWidget):
         filter_layout.setHorizontalSpacing(10)
         filter_layout.setVerticalSpacing(10)
         self.filter_box.setMinimumHeight(122)
-        self.duration_override = QCheckBox("覆盖时长")
-        self.duration_override.setToolTip("勾选后本次下载才会应用左侧时长范围；未勾选时仍可先编辑数值")
+        self.duration_override = QLabel("时长筛选")
+        self.duration_override.setToolTip("当前输入的时长范围会直接应用于本次预览/下载")
         self.duration_override.setMinimumWidth(116)
         self.min_duration = QSpinBox(); self.min_duration.setRange(0, 86400); self.min_duration.setValue(0)
         self.min_duration.setSuffix(" 秒"); self.min_duration.setSpecialValueText("不限")
@@ -536,8 +538,8 @@ class TasksPage(QWidget):
         self.max_duration = QSpinBox(); self.max_duration.setRange(0, 86400); self.max_duration.setValue(86400)
         self.max_duration.setSuffix(" 秒")
         self.max_duration.setMinimumWidth(170)
-        self.date_override = QCheckBox("覆盖发布时间")
-        self.date_override.setToolTip("勾选后本次下载才会应用左侧发布时间范围；未勾选时仍可先编辑日期")
+        self.date_override = QLabel("发布时间筛选")
+        self.date_override.setToolTip("当前输入的发布时间范围会直接应用于本次预览/下载")
         self.date_override.setMinimumWidth(116)
         self.min_date = QLineEdit("0"); self.min_date.setPlaceholderText("最早 YYYY.MM.DD，0=不限")
         self.max_date = QLineEdit("0"); self.max_date.setPlaceholderText("最晚 YYYY.MM.DD，0=不限")
@@ -620,10 +622,7 @@ class TasksPage(QWidget):
         filter_layout.setColumnStretch(6, 0)
         filter_layout.setColumnStretch(7, 0)
         filter_layout.setColumnStretch(8, 1)
-        self.duration_override.toggled.connect(self._toggle_duration_filter)
-        self.date_override.toggled.connect(self._toggle_date_filter)
-        self._toggle_duration_filter(False)
-        self._toggle_date_filter(False)
+        self._load_filter_defaults()
         self._load_blacklist_enabled()
         self._load_allowlist_enabled()
         root.addWidget(self.filter_box)
@@ -659,6 +658,9 @@ class TasksPage(QWidget):
         self.search.textChanged.connect(self._filter)
         self.mid.currentIndexChanged.connect(self._load_blacklist_enabled)
         self.mid.currentIndexChanged.connect(self._load_allowlist_enabled)
+        self.mid.currentIndexChanged.connect(self._load_filter_defaults)
+        self.mid.currentIndexChanged.connect(self._refresh_media_view)
+        self.media.currentIndexChanged.connect(self._refresh_media_view)
         controller.task_started.connect(self._task_started)
         controller.task_finished.connect(self._task_finished)
         controller.task_failed.connect(self._task_failed)
@@ -679,8 +681,35 @@ class TasksPage(QWidget):
 
     def refresh(self):
         self.refresh_ups()
-        self.table.load(self.controller.list_videos(self.mid_value()))
+        self._load_filter_defaults()
+        self._refresh_media_view()
         self.refresh_runtime()
+
+    def _refresh_media_view(self, *_args):
+        media_type = self.media.currentText()
+        self.table.setHorizontalHeaderItem(5, QTableWidgetItem(f"状态 ({media_type})"))
+        self.table.load(self.controller.list_videos(self.mid_value(), media_type))
+        self.refresh_runtime()
+
+    def _load_filter_defaults(self, *_args):
+        mid = self.mid_value()
+        if mid is None:
+            cfg = self.controller.settings()
+            min_d = cfg.get("filter", {}).get("min_duration", 300)
+            max_d = cfg.get("filter", {}).get("max_duration", 1800)
+            min_date = max_date = "0"
+        else:
+            settings = self.controller.get_up_filter_settings(mid)
+            cfg = self.controller.settings()
+            min_d = settings.min_duration if settings.min_duration is not None else cfg["filter"]["min_duration"]
+            max_d = settings.max_duration if settings.max_duration is not None else cfg["filter"]["max_duration"]
+            min_date = settings.min_date or "0"
+            max_date = settings.max_date or "0"
+        for widget, value in ((self.min_duration, min_d), (self.max_duration, max_d),
+                              (self.min_date, min_date), (self.max_date, max_date)):
+            widget.blockSignals(True)
+            widget.setValue(int(value)) if isinstance(widget, QSpinBox) else widget.setText(str(value))
+            widget.blockSignals(False)
 
     def refresh_runtime(self):
         snapshot = self.controller.app.state.snapshot()
@@ -840,11 +869,11 @@ class TasksPage(QWidget):
         options = DownloadOptions(
             quality=None if quality == "默认" else quality,
             media_type=self.media.currentText(),
-            min_duration=self.min_duration.value() if self.duration_override.isChecked() else None,
-            max_duration=self.max_duration.value() if self.duration_override.isChecked() else None,
-            min_date=self.min_date.text().strip() or "0" if self.date_override.isChecked() else None,
-            max_date=self.max_date.text().strip() or "0" if self.date_override.isChecked() else None,
-            date_override=self.date_override.isChecked(),
+            min_duration=self.min_duration.value(),
+            max_duration=self.max_duration.value(),
+            min_date=self.min_date.text().strip() or "0",
+            max_date=self.max_date.text().strip() or "0",
+            date_override=True,
         )
         try:
             options.validate()
@@ -872,7 +901,7 @@ class TasksPage(QWidget):
             self.task_status.setText("下载任务已启动，正在准备队列...")
         else:
             QMessageBox.warning(self, "无法开始下载", "下载任务已经在运行中，或应用正在退出")
-    def retry(self): self.controller.start_retry(self.mid_value())
+    def retry(self): self.controller.start_retry(self.mid_value(), self.media.currentText())
     def stop(self):
         if self.controller.is_running():
             self.controller.stop()

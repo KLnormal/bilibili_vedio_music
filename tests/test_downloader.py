@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from bilibili_crawler.bilibili.video import PlaybackInfo, Stream, VideoDetail
-from bilibili_crawler.downloader.downloader import VideoDownloader
+from bilibili_crawler.downloader.downloader import DownloadError, VideoDownloader
 from bilibili_crawler.downloader.limiter import RateLimiter, mbps_to_bps
 
 
@@ -131,10 +131,36 @@ class VideoDownloaderModesTest(unittest.TestCase):
         downloader = VideoDownloader(
             self.client, save_root=str(self.root), prefer_dash=True, ffmpeg_path="ffmpeg"
         )
-        completed = mock.Mock(returncode=0, stderr="")
-        with mock.patch("bilibili_crawler.downloader.downloader.subprocess.run", return_value=completed) as run:
+        process = mock.Mock(returncode=0)
+        process.poll.side_effect = [0]
+        process.communicate.return_value = ("", "")
+        with mock.patch("bilibili_crawler.downloader.downloader.subprocess.Popen", return_value=process) as run:
             downloader._run_ffmpeg(["ffmpeg", "-version"])
         self.assertEqual(run.call_args.kwargs["creationflags"], getattr(__import__("subprocess"), "CREATE_NO_WINDOW", 0))
+
+    def test_cancelled_stream_stops_before_writing_more_chunks(self):
+        downloader = VideoDownloader(
+            self.client, save_root=str(self.root), prefer_dash=False, ffmpeg_path=""
+        )
+
+        class Response:
+            status_code = 200
+            headers = {"Content-Length": "2"}
+
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def iter_content(self, chunk_size):
+                yield b"x"
+
+        client = mock.Mock()
+        client.session.get.return_value = Response()
+        downloader.client = client
+        downloader.cancel()
+        dest = self.root / "out.mp4"
+        with self.assertRaises(DownloadError):
+            downloader._download_stream("url", dest, "BVcancel", self.limiter, None)
+        self.assertFalse(dest.exists())
+        self.assertFalse(dest.with_suffix(".mp4.part").exists())
 
 
 if __name__ == "__main__":

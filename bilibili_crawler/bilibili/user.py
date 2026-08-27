@@ -77,6 +77,7 @@ def iter_submissions(
     page_backoff: float = 20.0,
     start_page: int = 1,
     page_callback: Optional[Callable[[int, int, int], None]] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> Iterator[VideoListItem]:
     """Yield submission-list items newest-first, page by page.
 
@@ -90,12 +91,16 @@ def iter_submissions(
     page = max(1, int(start_page))
     seen_signatures = set()
     while True:
+        if should_stop is not None and should_stop():
+            return
         if max_pages is not None and page > max_pages:
             return
         valid_items = None
         raw_count = 0
         signature = ()
         for attempt in range(page_retries + 1):
+            if should_stop is not None and should_stop():
+                return
             try:
                 params = {
                     "mid": mid,
@@ -158,7 +163,17 @@ def iter_submissions(
                 break
             except BilibiliError as exc:
                 if attempt < page_retries:
-                    time.sleep(page_backoff)
+                    # Event.wait-style callbacks let the desktop Stop button
+                    # interrupt a long anti-crawl backoff immediately.  Keep
+                    # this compatible with plain callbacks used by tests.
+                    deadline = time.monotonic() + max(0.0, page_backoff)
+                    while True:
+                        if should_stop is not None and should_stop():
+                            return
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        time.sleep(min(0.2, remaining))
                     continue
                 # Retries exhausted: surface the error so the caller can decide
                 # to stop (the videos already scanned are kept).

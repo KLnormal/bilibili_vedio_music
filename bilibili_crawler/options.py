@@ -91,6 +91,9 @@ class DownloadOptions:
             and self.min_duration > self.max_duration
         ):
             raise ValueError("min_duration must not exceed max_duration")
+        for name, value in (("min_duration", self.min_duration), ("max_duration", self.max_duration)):
+            if value is not None and value < 0:
+                raise ValueError(f"{name} must be >= 0")
         # 校验日期格式（"0" 视为不限）
         self.min_datetime
         self.max_datetime

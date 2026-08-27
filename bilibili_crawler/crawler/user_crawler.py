@@ -115,6 +115,7 @@ class UserCrawler:
             for item in iter_submissions(
                 self.client, mid, page_size=self.page_size, max_pages=self.max_pages,
                 start_page=start_page, page_callback=page_done,
+                should_stop=lambda: self.state.stopped,
             ):
                 if self.state.stopped:
                     stopped_early = True

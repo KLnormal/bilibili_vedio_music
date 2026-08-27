@@ -87,7 +87,7 @@ class DownloadTaskManager:
     def _worker_loop(self) -> None:
         while self._should_continue():
             # Atomically claim one PENDING video (flips it to DOWNLOADING).
-            video = self.repo.claim_next_pending(self._mid)
+            video = self.repo.claim_next_pending(self._mid, self._options.media_type)
             if video is None:
                 time.sleep(1.0)
                 continue
@@ -129,7 +129,8 @@ class DownloadTaskManager:
                 qn=self._options.qn,
             )
             self.repo.update_download_status(
-                bvid, DownloadStatus.DOWNLOADED, path=str(path)
+                bvid, DownloadStatus.DOWNLOADED, path=str(path),
+                media_type=self._options.media_type,
             )
             self.state.add_download_result(True)
             self.state.log(f"下载成功: {video.title} ({bvid})")
@@ -138,10 +139,13 @@ class DownloadTaskManager:
             if self._stop_event.is_set() or self.state.stopped:
                 # A user cancellation is not a failed download; leave it in
                 # the queue so a later Start can resume it.
-                self.repo.set_pending(bvid)
+                self.repo.set_pending(bvid, self._options.media_type)
                 self.state.log(f"下载已停止: {bvid}")
             else:
-                self.repo.update_download_status(bvid, DownloadStatus.FAILED, error=message)
+                self.repo.update_download_status(
+                    bvid, DownloadStatus.FAILED, error=message,
+                    media_type=self._options.media_type,
+                )
                 self.state.add_download_result(False)
                 self.state.log(f"下载失败: {bvid} -> {message}")
         finally:

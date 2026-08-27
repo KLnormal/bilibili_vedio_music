@@ -56,6 +56,18 @@ CREATE TABLE IF NOT EXISTS up_allowlist (
     FOREIGN KEY (mid) REFERENCES up (mid) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS video_media (
+    bvid            TEXT NOT NULL,
+    media_type      TEXT NOT NULL CHECK (media_type IN ('video', 'audio')),
+    download_status TEXT NOT NULL DEFAULT 'PENDING',
+    download_path   TEXT NOT NULL DEFAULT '',
+    download_time   TEXT,
+    download_error  TEXT NOT NULL DEFAULT '',
+    filter_reason   TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (bvid, media_type),
+    FOREIGN KEY (bvid) REFERENCES video (bvid) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS up_filter_settings (
     mid          INTEGER PRIMARY KEY,
     min_duration INTEGER,
@@ -69,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_video_mid ON video (mid);
 CREATE INDEX IF NOT EXISTS idx_video_status ON video (download_status);
 CREATE INDEX IF NOT EXISTS idx_blacklist_mid ON up_blacklist (mid);
 CREATE INDEX IF NOT EXISTS idx_allowlist_mid ON up_allowlist (mid);
+CREATE INDEX IF NOT EXISTS idx_video_media_status ON video_media (media_type, download_status);
 """
 
 
@@ -127,6 +140,32 @@ class Database:
         self._conn.execute(
             "UPDATE video SET download_status = 'FILTERED' "
             "WHERE download_status = 'SKIPPED'"
+        )
+        # Populate media-specific state for legacy databases. INSERT OR IGNORE
+        # makes this migration safe to run repeatedly.
+        self._conn.execute(
+            """INSERT OR IGNORE INTO video_media
+               (bvid, media_type, download_status, download_path,
+                download_time, download_error, filter_reason)
+               SELECT bvid, 'video',
+                      CASE WHEN lower(download_path) LIKE '%.m4a' THEN 'PENDING' ELSE download_status END,
+                      CASE WHEN lower(download_path) LIKE '%.m4a' THEN '' ELSE download_path END,
+                      CASE WHEN lower(download_path) LIKE '%.m4a' THEN NULL ELSE download_time END,
+                      CASE WHEN lower(download_path) LIKE '%.m4a' THEN '' ELSE download_error END,
+                      CASE WHEN lower(download_path) LIKE '%.m4a' THEN '' ELSE filter_reason END
+                 FROM video"""
+        )
+        self._conn.execute(
+            """INSERT OR IGNORE INTO video_media
+               (bvid, media_type, download_status, download_path,
+                download_time, download_error, filter_reason)
+               SELECT bvid, 'audio',
+                      CASE WHEN lower(download_path) LIKE '%.m4a' THEN download_status ELSE 'PENDING' END,
+                      CASE WHEN lower(download_path) LIKE '%.m4a' THEN download_path ELSE '' END,
+                      CASE WHEN lower(download_path) LIKE '%.m4a' THEN download_time ELSE NULL END,
+                      CASE WHEN lower(download_path) LIKE '%.m4a' THEN download_error ELSE '' END,
+                      CASE WHEN lower(download_path) LIKE '%.m4a' THEN filter_reason ELSE '' END
+                 FROM video"""
         )
 
     @property

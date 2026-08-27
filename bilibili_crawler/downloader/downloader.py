@@ -85,11 +85,30 @@ class VideoDownloader:
         self.stop_event.clear()
 
     def _run_ffmpeg(self, cmd):
-        kwargs = {"capture_output": True, "text": True}
+        kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+        }
         # Prevent ffmpeg's console subsystem from opening a visible window on
         # Windows desktop launches.  The flag is ignored on other platforms.
         kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        return subprocess.run(cmd, **kwargs)
+        try:
+            proc = subprocess.Popen(cmd, **kwargs)
+        except OSError:
+            raise
+        while proc.poll() is None:
+            if self.stop_event.is_set():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=2)
+                raise DownloadError("下载已停止")
+            time.sleep(0.05)
+        stdout, stderr = proc.communicate()
+        return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
     def _media_headers(self, referer: str) -> Dict[str, str]:
         return {
@@ -318,6 +337,9 @@ class VideoDownloader:
                                 f"{speed / (1024 * 1024):.1f} MB/s",
                             )
             tmp.replace(dest)
+        except DownloadError:
+            tmp.unlink(missing_ok=True)
+            raise
         except requests.RequestException as exc:
             tmp.unlink(missing_ok=True)
             raise DownloadError(f"network error for {bvid}{suffix}: {exc}") from exc

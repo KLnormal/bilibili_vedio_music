@@ -66,12 +66,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_retry = sub.add_parser("retry", help="reset FAILED videos to PENDING")
     p_retry.add_argument("--mid", type=int, default=None)
+    p_retry.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video")
 
     p_status = sub.add_parser("status", help="show download status (global or per UP)")
     p_status.add_argument("mid", type=int, nargs="?", default=None)
+    p_status.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video")
 
     p_check = sub.add_parser("check", help="check DB vs local files, recover MISSING -> PENDING")
     p_check.add_argument("mid", type=int, nargs="?", default=None)
+    p_check.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video")
 
     p_preview = sub.add_parser("preview", help="preview download decisions (dry-run)")
     p_preview.add_argument("mid", type=int, nargs="?", default=None)
@@ -168,7 +171,7 @@ def _download_once(app: App, mid: Optional[int], options: DownloadOptions) -> No
     counts = app.prepare_download(mid, options)
     if counts["filtered"]:
         print(f"filtered {counts['filtered']} video(s) by rules (blacklist/duration).")
-    pending = app.repo.list_pending(mid=mid, limit=1000)
+    pending = app.repo.list_pending(mid=mid, limit=1000, media_type=options.media_type)
     print(f"{len(pending)} PENDING video(s) to download.")
     app.state.set_pending_count(len(pending))
     # Restrict the workers to the requested UP (if any) and apply options.
@@ -181,7 +184,7 @@ def _download_once(app: App, mid: Optional[int], options: DownloadOptions) -> No
         # the moment it claims a video, so PENDING briefly hits 0 while a
         # download is still running, and the loop would exit early.
         while True:
-            statuses = app.repo.count_by_status(mid)
+            statuses = app.repo.count_by_status(mid, options.media_type)
             active = statuses.get("PENDING", 0) + statuses.get("DOWNLOADING", 0)
             if active == 0:
                 break
@@ -198,14 +201,14 @@ def _cmd_download(app: App, mid: Optional[int], options: DownloadOptions) -> int
     return 0
 
 
-def _cmd_retry(app: App, mid: Optional[int]) -> int:
-    n = app.reset_failed(mid)
+def _cmd_retry(app: App, mid: Optional[int], media_type: str = "video") -> int:
+    n = app.reset_failed(mid, media_type)
     print(f"Reset {n} FAILED video(s) to PENDING.")
     return 0
 
 
-def _cmd_status(app: App, mid: Optional[int]) -> int:
-    s = app.status(mid)
+def _cmd_status(app: App, mid: Optional[int], media_type: str = "video") -> int:
+    s = app.status(mid, media_type)
     if mid is not None and "up" in s:
         up = s["up"]
         print(f"UP: {up['name']} (mid={mid})")
@@ -216,8 +219,8 @@ def _cmd_status(app: App, mid: Optional[int]) -> int:
     return 0
 
 
-def _cmd_check(app: App, mid: Optional[int]) -> int:
-    result = app.check_files(mid)
+def _cmd_check(app: App, mid: Optional[int], media_type: str = "video") -> int:
+    result = app.check_files(mid, media_type)
     print(f"checked {result['checked']} DOWNLOADED video(s).")
     if result["missing"]:
         print(f"MISSING {len(result['missing'])} -> reset to PENDING:")
@@ -245,6 +248,8 @@ def _cmd_preview(app: App, mid: Optional[int], options: DownloadOptions, explain
         if d.decision == "FILTERED":
             if d.reason.startswith("blacklist"):
                 filtered["BLACKLIST"] += 1
+            elif d.reason == "allowlist_miss":
+                filtered["ALLOWLIST"] += 1
             else:
                 filtered["DURATION"] += 1
 
@@ -252,6 +257,7 @@ def _cmd_preview(app: App, mid: Optional[int], options: DownloadOptions, explain
     print(f"DOWNLOADED  {stats.get('DOWNLOADED', 0)}")
     print(f"MISSING     {stats.get('MISSING', 0)}")
     print(f"DURATION    {filtered.get('DURATION', 0)}")
+    print(f"ALLOWLIST   {filtered.get('ALLOWLIST', 0)}")
     print(f"BLACKLIST   {filtered.get('BLACKLIST', 0)}")
     print(f"FAILED      {stats.get('FAILED', 0)}")
     print(f"DOWNLOADING {stats.get('DOWNLOADING', 0)}")
@@ -365,11 +371,11 @@ def main(argv: Optional[list] = None) -> int:
             opts = DownloadOptions(quality=args.quality, media_type=args.media_type)
             return _cmd_download_bv(app, args.bvids, opts)
         if args.command == "retry":
-            return _cmd_retry(app, args.mid)
+            return _cmd_retry(app, args.mid, args.media_type)
         if args.command == "status":
-            return _cmd_status(app, args.mid)
+            return _cmd_status(app, args.mid, args.media_type)
         if args.command == "check":
-            return _cmd_check(app, args.mid)
+            return _cmd_check(app, args.mid, args.media_type)
         if args.command == "preview":
             opts = DownloadOptions(
                 quality=args.quality,

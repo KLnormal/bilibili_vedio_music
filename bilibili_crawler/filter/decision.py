@@ -79,16 +79,21 @@ class DecisionEngine:
             if self._max_date is not None and created_date > self._max_date.date():
                 return Decision("FILTERED", reason="date_out_of_range", checks=checks)
 
+        allowed = True
         if self._allowlist:
             allowed = blacklist_hit(video.title, self._allowlist)
             checks["allowlist"] = allowed
-            if not allowed:
-                return Decision("FILTERED", reason="allowlist_miss", checks=checks)
 
+        # Evaluate the blacklist even when an allowlist miss was found.  When
+        # both rules are enabled, blacklist is authoritative and must be the
+        # reported reason (and the effective exclusion) for a matching title.
         hit = blacklist_hit(video.title, self._blacklist)
         checks["blacklist"] = hit
         if hit:
             return Decision("FILTERED", reason=f"blacklist: {hit}", checks=checks)
+
+        if self._allowlist and not allowed:
+            return Decision("FILTERED", reason="allowlist_miss", checks=checks)
 
         return Decision("READY", checks=checks)
 

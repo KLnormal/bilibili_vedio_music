@@ -165,15 +165,15 @@ class App:
             self.check_files(None)
             return stats
 
-    def reset_failed(self, mid: Optional[int] = None) -> int:
-        n = self.repo.reset_failed(mid)
+    def reset_failed(self, mid: Optional[int] = None, media_type: str = "video") -> int:
+        n = self.repo.reset_failed(mid, media_type)
         self.state.log(f"已重置 {n} 个失败任务为 PENDING")
         return n
 
     # ------------------------------------------------------- v0.2 commands --
-    def status(self, mid: Optional[int] = None) -> dict:
+    def status(self, mid: Optional[int] = None, media_type: str = "video") -> dict:
         """Return status statistics for one UP or the whole database."""
-        counts = self.repo.count_by_status(mid)
+        counts = self.repo.count_by_status(mid, media_type)
         result: dict = {
             "mid": mid,
             "total": sum(counts.values()),
@@ -188,7 +188,7 @@ class App:
                 }
         return result
 
-    def check_files(self, mid: Optional[int] = None) -> dict:
+    def check_files(self, mid: Optional[int] = None, media_type: str = "video") -> dict:
         """Check DOWNLOADED videos against the filesystem.
 
         A video recorded as DOWNLOADED whose file no longer exists is marked
@@ -196,13 +196,13 @@ class App:
         section 5). The database stays the source of truth; the filesystem is
         only the existence verifier.
         """
-        videos = self.repo.list_downloaded(mid)
+        videos = self.repo.list_downloaded(mid, media_type)
         missing: List[str] = []
         for v in videos:
             path = Path(v.download_path) if v.download_path else None
             if path is None or not path.is_file():
                 missing.append(v.bvid)
-                self.repo.update_download_status(v.bvid, DownloadStatus.PENDING)
+                self.repo.update_download_status(v.bvid, DownloadStatus.PENDING, media_type=media_type)
         return {"checked": len(videos), "missing": missing}
 
     def download_bv(self, bvids: List[str], options: Optional[DownloadOptions] = None) -> List[tuple]:
@@ -225,6 +225,11 @@ class App:
                     detail, up_dir, self.limiter,
                     media_type=options.media_type, qn=options.qn,
                 )
+                if self.repo.video_exists(bvid):
+                    self.repo.update_download_status(
+                        bvid, DownloadStatus.DOWNLOADED, path=str(path),
+                        media_type=options.media_type,
+                    )
                 results.append((bvid, True, str(path)))
             except Exception as exc:  # noqa: BLE001
                 results.append((bvid, False, str(exc)))
@@ -284,6 +289,7 @@ class App:
         then only consumes READY (PENDING) videos. ``mid=None`` applies to all
         enabled UPs, each with its own blacklist.
         """
+        options.validate()
         mids = [mid] if mid is not None else [u.mid for u in self.repo.list_ups(enabled_only=True)]
 
         counts: Dict[str, int] = {"ready": 0, "filtered": 0}
@@ -301,16 +307,16 @@ class App:
                 min_date=min_date, max_date=max_date,
                 allowlist_keywords=allowlist,
             )
-            for video in self.repo.list_videos(m):
+            for video in self.repo.list_videos(m, options.media_type):
                 if video.download_status not in (DownloadStatus.PENDING, DownloadStatus.FILTERED):
                     continue
                 decision = engine.decide(video)
                 if decision.decision == "READY":
                     if video.download_status is DownloadStatus.FILTERED:
-                        self.repo.set_pending(video.bvid)
+                        self.repo.set_pending(video.bvid, options.media_type)
                     counts["ready"] += 1
                 elif decision.decision == "FILTERED":
-                    self.repo.set_filtered(video.bvid, decision.reason)
+                    self.repo.set_filtered(video.bvid, decision.reason, options.media_type)
                     counts["filtered"] += 1
         return counts
 
@@ -320,6 +326,7 @@ class App:
         Returns decision statistics plus the full (video, decision) list so the
         CLI/TUI can show both aggregate counts and per-video explanations.
         """
+        options.validate()
         mids = [mid] if mid is not None else [u.mid for u in self.repo.list_ups(enabled_only=True)]
 
         decisions: List[tuple] = []
@@ -337,7 +344,7 @@ class App:
                 min_date=min_date, max_date=max_date,
                 allowlist_keywords=allowlist,
             )
-            for video in self.repo.list_videos(m):
+            for video in self.repo.list_videos(m, options.media_type):
                 decisions.append((video, engine.decide(video)))
 
         stats = Counter(d.decision for _, d in decisions)
