@@ -78,6 +78,8 @@ class DesktopControlsTest(unittest.TestCase):
         QTest.mouseClick(nav, Qt.MouseButton.LeftButton)
         self.qt.processEvents()
         self.assertIs(self.window.pages.currentWidget(), self.window.tasks)
+        self.assertTrue(self.window.tasks.min_duration.isEnabled())
+        self.assertTrue(self.window.tasks.min_date.isEnabled())
         QTest.mouseClick(self.window.tasks.duration_override, Qt.MouseButton.LeftButton)
         self.qt.processEvents()
         self.assertTrue(self.window.tasks.min_duration.isEnabled())

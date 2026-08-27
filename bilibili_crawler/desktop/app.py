@@ -528,6 +528,7 @@ class TasksPage(QWidget):
         filter_layout.setVerticalSpacing(10)
         self.filter_box.setMinimumHeight(122)
         self.duration_override = QCheckBox("覆盖时长")
+        self.duration_override.setToolTip("勾选后本次下载才会应用左侧时长范围；未勾选时仍可先编辑数值")
         self.duration_override.setMinimumWidth(116)
         self.min_duration = QSpinBox(); self.min_duration.setRange(0, 86400); self.min_duration.setValue(0)
         self.min_duration.setSuffix(" 秒"); self.min_duration.setSpecialValueText("不限")
@@ -536,6 +537,7 @@ class TasksPage(QWidget):
         self.max_duration.setSuffix(" 秒")
         self.max_duration.setMinimumWidth(170)
         self.date_override = QCheckBox("覆盖发布时间")
+        self.date_override.setToolTip("勾选后本次下载才会应用左侧发布时间范围；未勾选时仍可先编辑日期")
         self.date_override.setMinimumWidth(116)
         self.min_date = QLineEdit("0"); self.min_date.setPlaceholderText("最早 YYYY.MM.DD，0=不限")
         self.max_date = QLineEdit("0"); self.max_date.setPlaceholderText("最晚 YYYY.MM.DD，0=不限")
@@ -744,12 +746,15 @@ class TasksPage(QWidget):
             self.table.setRowHidden(row, bool(query and query not in title and query not in bvid))
 
     def _toggle_duration_filter(self, enabled: bool):
-        self.min_duration.setEnabled(enabled)
-        self.max_duration.setEnabled(enabled)
+        # Keep the editors interactive so users can prepare values before
+        # enabling the override checkbox.  The checkbox still controls
+        # whether those values are included in DownloadOptions.
+        self.min_duration.setEnabled(True)
+        self.max_duration.setEnabled(True)
 
     def _toggle_date_filter(self, enabled: bool):
-        self.min_date.setEnabled(enabled)
-        self.max_date.setEnabled(enabled)
+        self.min_date.setEnabled(True)
+        self.max_date.setEnabled(True)
 
     def _load_blacklist_enabled(self, *_args):
         enabled = bool(self.controller.settings().get("filter", {}).get("blacklist_enabled", True))
@@ -868,7 +873,13 @@ class TasksPage(QWidget):
         else:
             QMessageBox.warning(self, "无法开始下载", "下载任务已经在运行中，或应用正在退出")
     def retry(self): self.controller.start_retry(self.mid_value())
-    def stop(self): self.controller.stop()
+    def stop(self):
+        if self.controller.is_running():
+            self.controller.stop()
+            self.task_status.setText("正在停止任务…")
+            self.scan_status.setText("正在停止任务…")
+        else:
+            self.task_status.setText("当前没有运行中的任务")
     def pause(self): self.controller.pause(not self.controller.app.state.paused)
 
 

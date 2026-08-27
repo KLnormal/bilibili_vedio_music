@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Dict, Optional
@@ -64,6 +65,9 @@ class VideoDownloader:
         self.user_agent = user_agent
         self.referer = referer
         self.chunk_size = chunk_size
+        # Set by DownloadTaskManager so an in-flight HTTP stream can be
+        # interrupted promptly when the user presses Stop.
+        self.stop_event = threading.Event()
 
     # ------------------------------------------------------------- helpers --
     @staticmethod
@@ -73,6 +77,19 @@ class VideoDownloader:
     @property
     def has_ffmpeg(self) -> bool:
         return bool(self.ffmpeg_path)
+
+    def cancel(self) -> None:
+        self.stop_event.set()
+
+    def clear_cancel(self) -> None:
+        self.stop_event.clear()
+
+    def _run_ffmpeg(self, cmd):
+        kwargs = {"capture_output": True, "text": True}
+        # Prevent ffmpeg's console subsystem from opening a visible window on
+        # Windows desktop launches.  The flag is ignored on other platforms.
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        return subprocess.run(cmd, **kwargs)
 
     def _media_headers(self, referer: str) -> Dict[str, str]:
         return {
@@ -192,7 +209,7 @@ class VideoDownloader:
             "-i", str(src), "-vn", "-c", "copy", str(output),
         ]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True)
+            proc = self._run_ffmpeg(cmd)
         except OSError as exc:
             raise DownloadError(f"failed to run ffmpeg: {exc}") from exc
         if proc.returncode != 0:
@@ -255,7 +272,7 @@ class VideoDownloader:
             cmd += ["-i", str(audio)]
         cmd += ["-c", "copy", str(output)]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True)
+            proc = self._run_ffmpeg(cmd)
         except OSError as exc:
             raise DownloadError(f"failed to run ffmpeg: {exc}") from exc
         if proc.returncode != 0:
@@ -285,6 +302,8 @@ class VideoDownloader:
                 start = time.monotonic()
                 with open(tmp, "wb") as fh:
                     for chunk in resp.iter_content(chunk_size=self.chunk_size):
+                        if self.stop_event.is_set():
+                            raise DownloadError("下载已停止")
                         if not chunk:
                             continue
                         limiter.acquire(len(chunk))

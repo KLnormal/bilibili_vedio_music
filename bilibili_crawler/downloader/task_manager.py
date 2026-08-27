@@ -50,6 +50,9 @@ class DownloadTaskManager:
 
     def start(self) -> None:
         self._stop_event.clear()
+        clear_cancel = getattr(self.downloader, "clear_cancel", None)
+        if clear_cancel:
+            clear_cancel()
         self._workers = [w for w in self._workers if w.is_alive()]
         for _ in range(self.concurrency):
             worker = threading.Thread(
@@ -60,6 +63,9 @@ class DownloadTaskManager:
 
     def stop(self) -> None:
         self._stop_event.set()
+        cancel = getattr(self.downloader, "cancel", None)
+        if cancel:
+            cancel()
 
     def join(self, timeout: Optional[float] = None) -> None:
         for worker in self._workers:
@@ -129,8 +135,14 @@ class DownloadTaskManager:
             self.state.log(f"下载成功: {video.title} ({bvid})")
         except (DownloadError, Exception) as exc:  # noqa: BLE001
             message = str(exc)[:500]
-            self.repo.update_download_status(bvid, DownloadStatus.FAILED, error=message)
-            self.state.add_download_result(False)
-            self.state.log(f"下载失败: {bvid} -> {message}")
+            if self._stop_event.is_set() or self.state.stopped:
+                # A user cancellation is not a failed download; leave it in
+                # the queue so a later Start can resume it.
+                self.repo.set_pending(bvid)
+                self.state.log(f"下载已停止: {bvid}")
+            else:
+                self.repo.update_download_status(bvid, DownloadStatus.FAILED, error=message)
+                self.state.add_download_result(False)
+                self.state.log(f"下载失败: {bvid} -> {message}")
         finally:
             self.state.clear_progress()

@@ -127,6 +127,15 @@ class VideoDownloaderModesTest(unittest.TestCase):
             ],
         )
 
+    def test_ffmpeg_runs_without_creating_console_window(self):
+        downloader = VideoDownloader(
+            self.client, save_root=str(self.root), prefer_dash=True, ffmpeg_path="ffmpeg"
+        )
+        completed = mock.Mock(returncode=0, stderr="")
+        with mock.patch("bilibili_crawler.downloader.downloader.subprocess.run", return_value=completed) as run:
+            downloader._run_ffmpeg(["ffmpeg", "-version"])
+        self.assertEqual(run.call_args.kwargs["creationflags"], getattr(__import__("subprocess"), "CREATE_NO_WINDOW", 0))
+
 
 if __name__ == "__main__":
     unittest.main()
