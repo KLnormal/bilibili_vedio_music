@@ -12,7 +12,7 @@
 | 版本 | v0.2.0 |
 | 里程碑 | v0.1.0 十项目标已实现；v0.2.0 八个 Phase **全部完成** |
 | 当前分支 | `bilibili_branch_download` |
-| 测试 | 核心 + 桌面 + 下载器 + CLI + 打包引导离线测试 79/79 通过；花譜在线扫描为显式 opt-in |
+| 测试 | 85 个核心/桌面/下载器/CLI/目录切换测试通过；花譜在线扫描为显式 opt-in（默认跳过） |
 | 关键验证 | ✅ 1080P / 4K 下载链路可行（ffprobe 实测） |
 
 ---
@@ -68,6 +68,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 - 扫描分页、下载流和 ffmpeg 均支持停止；Windows ffmpeg 使用 `CREATE_NO_WINDOW`，停止会清理 `.part` 并恢复 PENDING。
 - 离线回归测试命令：`$env:QT_QPA_PLATFORM='offscreen'; .\\.venv\\Scripts\\python.exe -m unittest discover -s tests -p "test*.py"`。
 - 花譜在线冒烟（临时库，不改现有数据）：`$env:RUN_BILIBILI_LIVE='1'; .\\.venv\\Scripts\\python.exe -m unittest discover -s tests -p "test_live*.py"`。
+- 下载目录切换：`app_meta.active_download_root` 记录当前根目录；切换时递归识别有效 `[BV号].mp4/.m4a`，旧目录的 DOWNLOADED/FAILED/DOWNLOADING 在新目录中重新排队，设置页支持浏览选择和后台同步。
 
 ---
 
@@ -76,17 +77,17 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | 子模块 | 文件 | 状态 | 说明 |
 |--------|------|------|------|
 | config | `config/configuration.py` | ✅ 稳定 | 默认值 + YAML 深合并覆盖 |
-| database | `database/{models,database,repository}.py` | ✅ 稳定 | SQLite；BV 元数据与 video/audio 独立媒体状态、原子认领、扫描游标与完整标记 |
+| database | `database/{models,database,repository}.py` | ✅ 稳定 | SQLite；BV 元数据与 video/audio 独立媒体状态、当前下载目录元数据、原子认领、扫描游标与完整标记 |
 | bilibili | `bilibili/{client,auth,user,video}.py` | ✅ 稳定 | WBI 签名、风控重试、扫码登录、分页校验与投稿断点 |
 | crawler | `crawler/{user_crawler,video_crawler,scheduler}.py` | ✅ 稳定 | 全量/增量扫描、去重、风控失败断点续扫 |
 | filter | `filter/{duration_filter,blacklist_filter,decision,explain}.py` | ✅ 稳定 | 时长/黑名单规则 + 统一决策器 + 规则解释 |
 | downloader | `downloader/{limiter,downloader,task_manager}.py` | ✅ 稳定 | 令牌桶限速、DASH+ffmpeg 合并、progressive/audio fallback、媒体状态机、可取消下载 |
 | cli | `cli/{commands,tui,keyreader}.py` | ✅ 稳定 | 新增 `download-bv`/`status`/`check` |
 | state | `state.py` | ✅ 稳定 | 线程安全共享运行状态 |
-| app | `app.py` | ✅ 稳定 | 新增 `status`/`check_files`/`download_bv` |
+| app | `app.py` | ✅ 稳定 | 新增 `status`/`check_files`/`download_bv`；当前下载目录同步、切换与轻量文件预检 |
 | options | `options.py` | ✅ 稳定 | `DownloadOptions` 统一参数对象 + 质量映射 |
 | tests | `tests/{test_core,test_downloader,test_packaging,e2e_demo,test_desktop}.py` | ✅ 稳定 | 核心、分页续扫、下载器模式、打包引导与桌面交互离线测试 |
-| desktop | `desktop/{app,controller,workers}.py` | ✅ 稳定 | PySide6 工作台、UP 级筛选、后台任务、登录与设置；Windows 前台激活、可交互平台保护、筛选区防重叠布局及任务页黑名单/指定下载名单管理 |
+| desktop | `desktop/{app,controller,workers}.py` | ✅ 稳定 | PySide6 工作台、UP 级筛选、后台任务、登录与设置；下载目录浏览、后台同步、运行中切换保护 |
 | packaging | `packaging/{bootstrap.py,*.spec,build_windows.ps1}` | ✅ 稳定 | PyInstaller 单文件 EXE、首次运行环境检查、用户目录配置和 ffmpeg 便携安装 |
 
 ---

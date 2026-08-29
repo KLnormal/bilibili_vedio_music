@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import threading
 import time
 from collections import Counter
@@ -13,6 +14,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from ..app import App
 from ..config.configuration import save_config
+from ..download_directory import normalize_download_root
 from ..database.models import DownloadStatus
 from ..database.models import UpFilterSettings
 from ..options import DownloadOptions
@@ -59,8 +61,14 @@ class DesktopController(QObject):
     def status(self, mid=None, media_type="video") -> dict:
         result = self.app.status(mid, media_type)
         missing = 0
+        root = normalize_download_root(self.app.download_root)
         for video in self.app.repo.list_downloaded(mid, media_type):
-            if not video.download_path or not Path(video.download_path).is_file():
+            try:
+                path = Path(video.download_path).expanduser().resolve(strict=False)
+                valid = path.is_file() and path.stat().st_size > 0 and path.is_relative_to(root)
+            except OSError:
+                valid = False
+            if not valid:
                 missing += 1
         result["counts"] = dict(result["counts"])
         # A missing file is a more useful presentation state than DOWNLOADED;
@@ -108,9 +116,34 @@ class DesktopController(QObject):
         self.app.save_up_filter_settings(settings)
 
     def save_settings(self, config: dict) -> Path:
+        new_root = normalize_download_root(config["download"]["save_root"])
+        current_root = normalize_download_root(self.app.download_root)
+        with self._lock:
+            other_tasks_running = any(name != "settings" for name in self._handles)
+        if os.path.normcase(str(new_root)) != os.path.normcase(str(current_root)) and other_tasks_running:
+            raise RuntimeError("任务运行中不能切换下载目录，请先停止任务")
+        old_config = copy.deepcopy(self.app.config)
         target = save_config(config, self.app.config_path)
-        self.app.apply_runtime_config(config)
+        try:
+            self.app.apply_runtime_config(config)
+        except Exception:
+            # Keep the on-disk configuration consistent with the active
+            # application state if validation or directory reconciliation
+            # fails after the atomic config write.
+            try:
+                save_config(old_config, self.app.config_path)
+            except Exception:
+                pass
+            raise
         return target
+
+    def start_save_settings(self, config: dict) -> bool:
+        """Persist settings away from the GUI thread (directory scans included)."""
+        with self._lock:
+            if any(name != "settings" for name in self._handles):
+                self.log_message.emit("任务运行中不能切换设置或下载目录")
+                return False
+        return self._start("settings", lambda cancel, worker: str(self.save_settings(config)))
 
     # ------------------------------------------------------------- workers --
     def _start(self, name: str, fn: Callable[[threading.Event, TaskWorker], Any], mid=None) -> bool:

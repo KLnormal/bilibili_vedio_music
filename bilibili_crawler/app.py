@@ -6,6 +6,7 @@ identically with or without the interactive terminal (plan principle #4).
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import threading
 from collections import Counter
@@ -21,6 +22,11 @@ from .crawler.user_crawler import CrawlStats, UserCrawler
 from .database.database import Database
 from .database.models import DownloadStatus, Up, UpFilterSettings
 from .database.repository import Repository
+from .download_directory import (
+    build_media_file_index,
+    ensure_writable_root,
+    normalize_download_root,
+)
 from .downloader.downloader import VideoDownloader
 from .downloader.limiter import RateLimiter, mbps_to_bps
 from .downloader.task_manager import DownloadTaskManager
@@ -86,13 +92,18 @@ class App:
         # --- downloader -----------------------------------------------------
         self.downloader = VideoDownloader(
             self.client,
-            save_root=dl["save_root"],
+            save_root=str(ensure_writable_root(dl["save_root"])),
             qn=dl["qn"],
             prefer_dash=dl["prefer_dash"],
             ffmpeg_path=dl["ffmpeg_path"],
             user_agent=dl["user_agent"],
             referer=dl["referer"],
         )
+        self.download_root = normalize_download_root(dl["save_root"])
+        self._download_root_lock = threading.RLock()
+        # Reconcile the configured root before workers are created.  This also
+        # upgrades old databases whose media paths point at a previous root.
+        self.sync_download_directory()
         self.download_manager = DownloadTaskManager(
             self.repo, self.downloader, self.state, concurrency=dl["concurrency"]
         )
@@ -150,7 +161,7 @@ class App:
         with self.scan_lock:
             if mid is not None:
                 stats = self.crawler.crawl_up(mid)
-                self.check_files(mid)
+                self.sync_download_directory(mid=mid)
                 return stats
             stats = CrawlStats()
             for up in self.repo.list_ups(enabled_only=True):
@@ -162,7 +173,7 @@ class App:
                 stats.filtered += s.filtered
                 stats.eligible += s.eligible
                 stats.failed += s.failed
-            self.check_files(None)
+            self.sync_download_directory()
             return stats
 
     def reset_failed(self, mid: Optional[int] = None, media_type: str = "video") -> int:
@@ -189,21 +200,79 @@ class App:
         return result
 
     def check_files(self, mid: Optional[int] = None, media_type: str = "video") -> dict:
-        """Check DOWNLOADED videos against the filesystem.
+        """Synchronize the selected media type with the active root."""
+        return self.sync_download_directory(mid=mid, media_type=media_type)
 
-        A video recorded as DOWNLOADED whose file no longer exists is marked
-        MISSING and reset to PENDING so it can be re-downloaded (plan v0.2
-        section 5). The database stays the source of truth; the filesystem is
-        only the existence verifier.
-        """
-        videos = self.repo.list_downloaded(mid, media_type)
+    def sync_download_directory(
+        self,
+        mid: Optional[int] = None,
+        media_type: Optional[str] = None,
+        *,
+        root_changed: Optional[bool] = None,
+    ) -> dict:
+        """Reconcile database media state with files below the active root."""
+        if media_type is not None and media_type not in ("video", "audio"):
+            raise ValueError("media_type must be 'video' or 'audio'")
+        with self._download_root_lock:
+            root = ensure_writable_root(self.download_root)
+            previous = self.repo.get_meta("active_download_root")
+            changed = (
+                bool(root_changed)
+                if root_changed is not None
+                else previous is None or os.path.normcase(str(root)) != os.path.normcase(str(previous))
+            )
+            index = build_media_file_index(root)
+            return self.repo.reconcile_media_files(
+                index,
+                active_root=str(root),
+                root_changed=changed,
+                mid=mid,
+                media_type=media_type,
+            )
+
+    def switch_download_root(self, new_root: str | Path) -> dict:
+        """Validate, scan and activate a new download root atomically."""
+        target = ensure_writable_root(new_root)
+        with self._download_root_lock:
+            current = normalize_download_root(self.download_root)
+            changed = os.path.normcase(str(target)) != os.path.normcase(str(current))
+            if not changed:
+                return self.sync_download_directory(root_changed=False)
+            index = build_media_file_index(target)
+            result = self.repo.reconcile_media_files(
+                index, active_root=str(target), root_changed=True
+            )
+            self.download_root = target
+            self.downloader.save_root = target
+            # Keep runtime configuration in sync for callers that switch the
+            # root directly (the desktop controller persists it separately).
+            self.config.setdefault("download", {})["save_root"] = str(target)
+            return result
+
+    def verify_current_download_files(
+        self, mid: Optional[int] = None, media_type: Optional[str] = None
+    ) -> dict:
+        """Lightweight preflight check for recorded files in the active root."""
+        if media_type is not None and media_type not in ("video", "audio"):
+            raise ValueError("media_type must be 'video' or 'audio'")
+        root = normalize_download_root(self.download_root)
+        types = (media_type,) if media_type else ("video", "audio")
         missing: List[str] = []
-        for v in videos:
-            path = Path(v.download_path) if v.download_path else None
-            if path is None or not path.is_file():
-                missing.append(v.bvid)
-                self.repo.update_download_status(v.bvid, DownloadStatus.PENDING, media_type=media_type)
-        return {"checked": len(videos), "missing": missing}
+        checked = 0
+        for kind in types:
+            for video in self.repo.list_downloaded(mid, kind):
+                checked += 1
+                try:
+                    path = Path(video.download_path).expanduser().resolve(strict=False)
+                    valid = path.is_file() and path.stat().st_size > 0 and path.is_relative_to(root)
+                except OSError:
+                    valid = False
+                if not valid:
+                    missing.append(video.bvid)
+                    self.repo.update_download_status(
+                        video.bvid, DownloadStatus.PENDING, media_type=kind
+                    )
+        return {"checked": checked, "missing": missing, "root": str(root)}
 
     def download_bv(self, bvids: List[str], options: Optional[DownloadOptions] = None) -> List[tuple]:
         """Directly download videos by bvid, bypassing all UP rules.
@@ -212,6 +281,8 @@ class App:
         (v0.2 section 9): no add, no scan, no UP blacklist, no duration filter.
         """
         options = options or DownloadOptions()
+        options.validate()
+        self._ensure_current_download_root()
         results: List[tuple] = []
         for bvid in bvids:
             try:
@@ -290,6 +361,8 @@ class App:
         enabled UPs, each with its own blacklist.
         """
         options.validate()
+        self._ensure_current_download_root()
+        self.verify_current_download_files(mid, options.media_type)
         mids = [mid] if mid is not None else [u.mid for u in self.repo.list_ups(enabled_only=True)]
 
         counts: Dict[str, int] = {"ready": 0, "filtered": 0}
@@ -327,6 +400,8 @@ class App:
         CLI/TUI can show both aggregate counts and per-video explanations.
         """
         options.validate()
+        self._ensure_current_download_root()
+        self.verify_current_download_files(mid, options.media_type)
         mids = [mid] if mid is not None else [u.mid for u in self.repo.list_ups(enabled_only=True)]
 
         decisions: List[tuple] = []
@@ -362,18 +437,29 @@ class App:
 
     def apply_runtime_config(self, config: dict) -> None:
         """Apply settings that can safely change while the desktop is open."""
-        self.config = config
+        new_root = ensure_writable_root(config["download"]["save_root"])
         f = config["filter"]
-        self.duration_filter = DurationFilter(f["min_duration"], f["max_duration"])
+        new_duration_filter = DurationFilter(f["min_duration"], f["max_duration"])
+        dl = config["download"]
+        new_limit = float(dl["max_speed_mbps"])
+        new_concurrency = max(1, int(dl["concurrency"]))
+        if os.path.normcase(str(new_root)) != os.path.normcase(str(self.download_root)):
+            self.switch_download_root(new_root)
+        self.config = config
+        self.duration_filter = new_duration_filter
         self.crawler.duration_filter = self.duration_filter
         self.crawler.request_interval = float(config["crawler"].get("request_interval", 0.3))
-        dl = config["download"]
-        self.set_limit(float(dl["max_speed_mbps"]))
-        self.downloader.save_root = Path(dl["save_root"])
+        self.set_limit(new_limit)
+        self.downloader.save_root = self.download_root
         self.downloader.qn = int(dl["qn"])
         self.downloader.prefer_dash = bool(dl["prefer_dash"])
         self.downloader.ffmpeg_path = str(dl.get("ffmpeg_path", "")) or self.downloader._find_ffmpeg()
-        self.download_manager.concurrency = max(1, int(dl["concurrency"]))
+        self.download_manager.concurrency = new_concurrency
+
+    def _ensure_current_download_root(self) -> None:
+        root = normalize_download_root(self.config["download"]["save_root"])
+        if os.path.normcase(str(root)) != os.path.normcase(str(self.download_root)):
+            self.switch_download_root(root)
 
     @property
     def has_ffmpeg(self) -> bool:

@@ -77,6 +77,11 @@ CREATE TABLE IF NOT EXISTS up_filter_settings (
     FOREIGN KEY (mid) REFERENCES up (mid) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS app_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
+
 CREATE INDEX IF NOT EXISTS idx_video_mid ON video (mid);
 CREATE INDEX IF NOT EXISTS idx_video_status ON video (download_status);
 CREATE INDEX IF NOT EXISTS idx_blacklist_mid ON up_blacklist (mid);

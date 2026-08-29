@@ -221,7 +221,12 @@ def _cmd_status(app: App, mid: Optional[int], media_type: str = "video") -> int:
 
 def _cmd_check(app: App, mid: Optional[int], media_type: str = "video") -> int:
     result = app.check_files(mid, media_type)
-    print(f"checked {result['checked']} DOWNLOADED video(s).")
+    print(f"root: {result.get('root', app.download_root)}")
+    print(f"checked {result['checked']} {media_type} media record(s).")
+    if result.get("discovered"):
+        print(f"discovered {result['discovered']} existing file(s).")
+    if result.get("reset_failed"):
+        print(f"reset {result['reset_failed']} stale FAILED record(s) to PENDING.")
     if result["missing"]:
         print(f"MISSING {len(result['missing'])} -> reset to PENDING:")
         for bvid in result["missing"]:

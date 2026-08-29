@@ -927,7 +927,15 @@ class SettingsPage(QWidget):
                            ("logging.file", "日志文件")]:
             edit = QLineEdit()
             self.fields[key] = edit
-            form.addRow(label, edit)
+            if key == "download.save_root":
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.addWidget(edit, 1)
+                row_layout.addWidget(_button("浏览", self.browse_download_root))
+                form.addRow(label, row)
+            else:
+                form.addRow(label, edit)
         self.concurrency = QSpinBox(); self.concurrency.setRange(1, 32)
         self.limit = QDoubleSpinBox(); self.limit.setRange(0.1, 10000); self.limit.setSuffix(" MB/s")
         self.min_duration = QSpinBox(); self.min_duration.setRange(0, 86400)
@@ -942,7 +950,10 @@ class SettingsPage(QWidget):
         form.addRow("媒体流", self.dash)
         root.addLayout(form)
         root.addStretch()
-        root.addWidget(_button("保存设置", self.save, True))
+        self.save_button = _button("保存设置", self.save, True)
+        root.addWidget(self.save_button)
+        controller.task_finished.connect(self._task_finished)
+        controller.task_failed.connect(self._task_failed)
         self.load()
 
     @staticmethod
@@ -954,7 +965,11 @@ class SettingsPage(QWidget):
 
     def load(self):
         cfg = self.controller.settings()
-        for key, field in self.fields.items(): field.setText(str(self._get(cfg, key, "")))
+        for key, field in self.fields.items():
+            if key == "download.save_root":
+                field.setText(str(self.controller.app.download_root))
+            else:
+                field.setText(str(self._get(cfg, key, "")))
         self.concurrency.setValue(int(self._get(cfg, "download.concurrency", 2)))
         self.limit.setValue(float(self._get(cfg, "download.max_speed_mbps", 40)))
         self.min_duration.setValue(int(self._get(cfg, "filter.min_duration", 300)))
@@ -962,6 +977,12 @@ class SettingsPage(QWidget):
         self.quality.setCurrentText({64:"720p",80:"1080p",112:"1080p+",116:"1080p60",120:"4k"}.get(int(self._get(cfg,"download.qn",80)), "1080p"))
         self.media.setCurrentText(self._get(cfg, "download.type", "video"))
         self.dash.setChecked(bool(self._get(cfg, "download.prefer_dash", True)))
+
+    def browse_download_root(self):
+        current = self.fields["download.save_root"].text().strip() or str(Path.cwd())
+        selected = QFileDialog.getExistingDirectory(self, "选择下载目录", current)
+        if selected:
+            self.fields["download.save_root"].setText(str(Path(selected).expanduser().resolve(strict=False)))
 
     def save(self):
         cfg = self.controller.settings()
@@ -975,9 +996,32 @@ class SettingsPage(QWidget):
                                 "prefer_dash": self.dash.isChecked()})
         cfg["filter"].update({"min_duration": self.min_duration.value(), "max_duration": self.max_duration.value()})
         try:
-            path = self.controller.save_settings(cfg)
-            QMessageBox.information(self, "设置已保存", f"已保存到：\n{path}")
+            # Directory validation and recursive reconciliation can take time;
+            # run the save through the controller worker so the Qt event loop
+            # remains responsive.  Other running tasks are rejected by the
+            # controller when a root change is requested.
+            if not self.controller.start_save_settings(cfg):
+                QMessageBox.warning(self, "无法保存", "已有设置保存或其他任务正在运行")
+                return
+            self.save_button.setEnabled(False)
+            self.save_button.setText("正在保存并同步目录…")
         except Exception as exc: QMessageBox.critical(self, "保存失败", str(exc))
+
+    def _task_finished(self, name, result):
+        if name != "settings":
+            return
+        self.save_button.setEnabled(True)
+        self.save_button.setText("保存设置")
+        self.load()
+        QMessageBox.information(self, "设置已保存", f"已保存到：\n{result}")
+
+    def _task_failed(self, name, message):
+        if name != "settings":
+            return
+        self.save_button.setEnabled(True)
+        self.save_button.setText("保存设置")
+        self.load()
+        QMessageBox.critical(self, "保存失败", message)
 
 
 class LoginDialog(QDialog):

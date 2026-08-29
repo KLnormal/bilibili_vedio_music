@@ -57,10 +57,14 @@ Windows 上建议使用项目目录内的虚拟环境。直接安装到 Python S
 - `start_scan(mid)` / `start_check(mid, media_type)` / `start_preview(mid, options)`
 - `start_download(mid, options)` / `start_retry(mid)`
 - `start_add_up(mid)` / `start_login()`
-- `pause(value)` / `stop()` / `save_settings(config)`
+- `pause(value)` / `stop()` / `save_settings(config)` / `start_save_settings(config)`
 
 停止会同时通知扫描、预览和下载 worker；下载中的 HTTP/ffmpeg 子进程被取消，
 媒体记录恢复为 PENDING，线程真正退出后页面才恢复可操作状态。
+
+设置页的下载目录支持手动输入和“浏览”选择。保存目录会在后台验证可写并递归
+同步文件状态；任务运行期间禁止切换目录。目标目录不可用或同步失败时会回退配置、
+运行时目录和数据库状态。
 
 ## 登录
 

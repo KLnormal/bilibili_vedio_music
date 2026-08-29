@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Iterable, List, Optional
 
 from .database import Database
 from .models import DownloadStatus, MediaDownload, Up, UpFilterSettings, Video
+from ..download_directory import MediaFile
 
 
 def _now_iso() -> str:
@@ -27,6 +29,124 @@ class Repository:
         if media_type not in ("video", "audio"):
             raise ValueError("media_type must be 'video' or 'audio'")
         return media_type
+
+    # ------------------------------------------------------------- metadata --
+    def get_meta(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        with self._lock:
+            row = self._db.connection.execute(
+                "SELECT value FROM app_meta WHERE key = ?", (key,)
+            ).fetchone()
+        return row["value"] if row is not None else default
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._lock:
+            self._db.connection.execute(
+                "INSERT INTO app_meta(key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, str(value)),
+            )
+
+    def reconcile_media_files(
+        self,
+        file_index: dict[tuple[str, str], MediaFile],
+        *,
+        active_root: str,
+        root_changed: bool = False,
+        mid: Optional[int] = None,
+        media_type: Optional[str] = None,
+    ) -> dict:
+        """Rebuild media state from files in the active download root.
+
+        This is deliberately transactional: callers build and validate the
+        filesystem index before entering this method, so a database failure
+        leaves all existing media state and the active-root marker untouched.
+        """
+        if media_type is not None:
+            self._validate_media_type(media_type)
+        result = {"root": active_root, "checked": 0, "discovered": 0,
+                  "missing": [], "reset_failed": 0}
+        conn = self._db.connection
+        with self._lock:
+            try:
+                conn.execute("BEGIN")
+                # Keep rows complete even for videos inserted by an older
+                # caller that predates the media table migration.
+                conn.execute(
+                    "INSERT OR IGNORE INTO video_media(bvid, media_type) "
+                    "SELECT bvid, 'video' FROM video"
+                )
+                conn.execute(
+                    "INSERT OR IGNORE INTO video_media(bvid, media_type) "
+                    "SELECT bvid, 'audio' FROM video"
+                )
+                query = (
+                    "SELECT m.bvid, m.media_type, m.download_status, m.download_path "
+                    "FROM video_media m JOIN video v ON v.bvid = m.bvid"
+                )
+                clauses, params = [], []
+                if mid is not None:
+                    clauses.append("v.mid = ?"); params.append(mid)
+                if media_type is not None:
+                    clauses.append("m.media_type = ?"); params.append(media_type)
+                if clauses:
+                    query += " WHERE " + " AND ".join(clauses)
+                rows = conn.execute(query, params).fetchall()
+                for row in rows:
+                    result["checked"] += 1
+                    key = (row["bvid"], row["media_type"])
+                    item = file_index.get(key)
+                    if item is not None:
+                        stamp = datetime.fromtimestamp(
+                            item.mtime_ns / 1_000_000_000, timezone.utc
+                        ).isoformat(timespec="seconds")
+                        conn.execute(
+                            "UPDATE video_media SET download_status='DOWNLOADED', "
+                            "download_path=?, download_time=?, download_error='', filter_reason='' "
+                            "WHERE bvid=? AND media_type=?",
+                            (str(item.path), stamp, row["bvid"], row["media_type"]),
+                        )
+                        result["discovered"] += 1
+                        continue
+
+                    status = row["download_status"]
+                    # Preserve legacy records on the same root even when an
+                    # old filename does not contain ``[BV...]``.  A root
+                    # switch deliberately ignores paths from the old root;
+                    # the compatibility fallback is only for an ordinary
+                    # check of the current root.
+                    if status == "DOWNLOADED" and not root_changed and row["download_path"]:
+                        try:
+                            legacy_path = Path(row["download_path"]).expanduser().resolve(strict=False)
+                            root_path = Path(active_root).resolve(strict=False)
+                            if legacy_path.is_file() and legacy_path.stat().st_size > 0 and legacy_path.is_relative_to(root_path):
+                                continue
+                        except OSError:
+                            pass
+                    should_reset = status == "DOWNLOADING" or (
+                        root_changed and status in {"DOWNLOADED", "FAILED"}
+                    ) or (status == "DOWNLOADED" and not root_changed)
+                    if should_reset:
+                        if root_changed and status == "FAILED":
+                            result["reset_failed"] += 1
+                        if status == "DOWNLOADED":
+                            result["missing"].append(row["bvid"])
+                        conn.execute(
+                            "UPDATE video_media SET download_status='PENDING', "
+                            "download_path='', download_time=NULL, download_error='' "
+                            "WHERE bvid=? AND media_type=?",
+                            (row["bvid"], row["media_type"]),
+                        )
+                conn.execute(
+                    "INSERT INTO app_meta(key, value) VALUES ('active_download_root', ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (active_root,),
+                )
+                self._sync_legacy_all()
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        return result
 
     # ------------------------------------------------------------------ UP --
     def upsert_up(self, up: Up) -> None:
