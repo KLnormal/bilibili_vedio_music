@@ -24,6 +24,14 @@ a = Analysis(
     excludes=["tkinter"],
     noarchive=False,
 )
+# The workspace runtime may expose Poppler's ICU forwarder DLL to PyInstaller.
+# It is ABI-incompatible with the ICU expected by Qt6Core and causes a
+# procedure-not-found error on startup.  Let Qt resolve the system/Qt ICU copy
+# instead of bundling this unrelated native dependency.
+a.binaries = [
+    entry for entry in a.binaries
+    if Path(entry[0]).name.lower() not in {"icuuc.dll", "icudt78.dll"}
+]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,

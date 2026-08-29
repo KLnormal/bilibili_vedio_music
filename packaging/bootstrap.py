@@ -32,6 +32,37 @@ REQUIRED_IMPORTS = {
     "PySide6": "PySide6>=6.7.0",
 }
 
+_DLL_DIRECTORY_HANDLES: list[object] = []
+
+
+def _prepare_frozen_dll_search_path() -> None:
+    """Make bundled Qt and Shiboken DLLs discoverable before importing PySide6.
+
+    On some Windows installations the one-file PyInstaller bootloader does not
+    include package subdirectories in the native DLL search path.  QtCore.pyd
+    then raises ``DLL load failed`` even though Qt6Core.dll is present in the
+    extracted bundle.  Registering the extracted directories explicitly is
+    harmless in source mode and fixes both one-file and one-dir builds.
+    """
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return
+    bundle_root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    search_dirs = [bundle_root, bundle_root / "PySide6", bundle_root / "shiboken6"]
+    for directory in search_dirs:
+        if not directory.is_dir():
+            continue
+        try:
+            # Keep the handle alive for the entire process; closing it removes
+            # the directory from the native loader search path.
+            _DLL_DIRECTORY_HANDLES.append(os.add_dll_directory(str(directory)))
+        except (AttributeError, OSError):
+            # Python < 3.8 or unusual locked-down systems: PATH is a safe
+            # fallback and keeps the launcher compatible.
+            os.environ["PATH"] = str(directory) + os.pathsep + os.environ.get("PATH", "")
+
+
+_prepare_frozen_dll_search_path()
+
 # When invoked directly from ``packaging\bootstrap.py`` Python puts only the
 # packaging directory on ``sys.path``. Add the checkout root so the same file
 # works both from source and from the PyInstaller bundle.
