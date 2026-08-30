@@ -34,6 +34,7 @@ from .filter.decision import DecisionEngine
 from .filter.duration_filter import DurationFilter
 from .options import DownloadOptions, parse_date
 from .state import RuntimeState
+from .youtube import YouTubeService
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class App:
         # --- persistence ---------------------------------------------------
         self.db = Database(resolve_data_path(self.config))
         self.repo = Repository(self.db)
+        self._youtube_service = None
         # Serializes scans so a manual "refresh" never overlaps the scheduler.
         self.scan_lock = threading.Lock()
 
@@ -152,6 +154,16 @@ class App:
     def list_ups(self) -> List[Up]:
         return self.repo.list_ups()
 
+    def youtube(self) -> YouTubeService:
+        """Lazily open the independent YouTube database."""
+        if self._youtube_service is None:
+            configured = self.config.get("youtube", {}).get("database_path")
+            db_path = Path(configured).expanduser().resolve() if configured else resolve_data_path(self.config).with_name("youtube.db")
+            self._youtube_service = YouTubeService(db_path, self.download_root, ffmpeg_path=self.downloader.ffmpeg_path,
+                                                   min_duration=int(self.config.get("filter", {}).get("min_duration", 0)),
+                                                   max_duration=int(self.config.get("filter", {}).get("max_duration", 0)))
+        return self._youtube_service
+
     def scan(self, mid: Optional[int] = None) -> CrawlStats:
         """Scan all enabled UPs (or a single mid). Serialized by ``scan_lock``.
 
@@ -244,6 +256,9 @@ class App:
             )
             self.download_root = target
             self.downloader.save_root = target
+            if self._youtube_service is not None:
+                self._youtube_service.save_root = target / "YouTube"
+                ensure_writable_root(self._youtube_service.save_root)
             # Keep runtime configuration in sync for callers that switch the
             # root directly (the desktop controller persists it separately).
             self.config.setdefault("download", {})["save_root"] = str(target)
@@ -469,6 +484,8 @@ class App:
         self.scheduler.stop()
         self.download_manager.stop()
         self.db.close()
+        if self._youtube_service is not None:
+            self._youtube_service.close()
 
 
 def check_ffmpeg() -> str:

@@ -19,6 +19,7 @@ from ..database.models import DownloadStatus
 from ..database.models import UpFilterSettings
 from ..options import DownloadOptions
 from .workers import TaskWorker
+from ..youtube import identify_channel, YouTubeChannel
 
 
 @dataclass
@@ -42,6 +43,7 @@ class DesktopController(QObject):
     def __init__(self, app: App, parent: Optional[QObject] = None):
         super().__init__(parent)
         self.app = app
+        self.source = "bilibili"
         self._handles: Dict[str, _Handle] = {}
         self._closing = False
         self._lock = threading.RLock()
@@ -53,12 +55,38 @@ class DesktopController(QObject):
         return snap
 
     def list_ups(self):
+        if self.source == "youtube":
+            return self.app.youtube().list_channels()
         return self.app.list_ups()
 
+    def set_source(self, source: str) -> None:
+        if source not in ("bilibili", "youtube"):
+            raise ValueError("invalid source")
+        self.source = source
+
+    def count_videos(self, channel_id=None, media_type="video") -> int:
+        if self.source == "youtube":
+            return len(self.app.youtube().list_videos(channel_id, media_type))
+        return self.app.repo.count_videos(channel_id)
+
+    def downloaded_videos(self, source: str, media_type: str = "video"):
+        previous = self.source
+        try:
+            self.source = source
+            if source == "youtube":
+                return [v for v in self.app.youtube().list_videos(None, media_type) if v.status == "DOWNLOADED"]
+            return self.app.repo.list_downloaded(None, media_type)
+        finally:
+            self.source = previous
+
     def list_videos(self, mid=None, media_type="video"):
+        if self.source == "youtube":
+            return self.app.youtube().list_videos(mid, media_type)
         return self.app.repo.list_videos(mid, media_type)
 
     def status(self, mid=None, media_type="video") -> dict:
+        if self.source == "youtube":
+            return self.app.youtube().status(mid, media_type)
         result = self.app.status(mid, media_type)
         missing = 0
         root = normalize_download_root(self.app.download_root)
@@ -82,37 +110,63 @@ class DesktopController(QObject):
         return copy.deepcopy(self.app.config)
 
     def preview_sync(self, mid, options):
+        if self.source == "youtube":
+            return self.app.youtube().preview(mid, options.media_type, options)
         return self.app.preview(mid, options)
 
     # --------------------------------------------------------------- CRUD --
     def remove_up(self, mid: int) -> bool:
+        if self.source == "youtube":
+            return self.app.youtube().remove_channel(str(mid))
         return self.app.remove_up(mid)
 
     def set_up_enabled(self, mid: int, enabled: bool) -> None:
+        if self.source == "youtube":
+            self.app.youtube().db.execute("UPDATE channel SET enabled=? WHERE channel_id=?", (int(enabled), str(mid))); self.app.youtube().db.commit(); return
         self.app.repo.set_up_enabled(mid, enabled)
 
     def add_blacklist(self, mid: int, keyword: str) -> bool:
+        if self.source == "youtube":
+            db = self.app.youtube().db; cur = db.execute("INSERT OR IGNORE INTO blacklist(channel_id,keyword) VALUES(?,?)", (str(mid), keyword.strip())); db.commit(); return cur.rowcount > 0
         return self.app.add_blacklist(mid, keyword)
 
     def remove_blacklist(self, mid: int, keyword: str) -> bool:
+        if self.source == "youtube":
+            db = self.app.youtube().db; cur = db.execute("DELETE FROM blacklist WHERE channel_id=? AND keyword=?", (str(mid), keyword.strip())); db.commit(); return cur.rowcount > 0
         return self.app.remove_blacklist(mid, keyword)
 
     def list_blacklist(self, mid: int):
+        if self.source == "youtube":
+            return [r[0] for r in self.app.youtube().db.execute("SELECT keyword FROM blacklist WHERE channel_id=? ORDER BY keyword", (str(mid),))]
         return self.app.list_blacklist(mid)
 
     def add_allowlist(self, mid: int, keyword: str) -> bool:
+        if self.source == "youtube":
+            db = self.app.youtube().db; cur = db.execute("INSERT OR IGNORE INTO allowlist(channel_id,keyword) VALUES(?,?)", (str(mid), keyword.strip())); db.commit(); return cur.rowcount > 0
         return self.app.add_allowlist(mid, keyword)
 
     def remove_allowlist(self, mid: int, keyword: str) -> bool:
+        if self.source == "youtube":
+            db = self.app.youtube().db; cur = db.execute("DELETE FROM allowlist WHERE channel_id=? AND keyword=?", (str(mid), keyword.strip())); db.commit(); return cur.rowcount > 0
         return self.app.remove_allowlist(mid, keyword)
 
     def list_allowlist(self, mid: int):
+        if self.source == "youtube":
+            return [r[0] for r in self.app.youtube().db.execute("SELECT keyword FROM allowlist WHERE channel_id=? ORDER BY keyword", (str(mid),))]
         return self.app.list_allowlist(mid)
 
     def get_up_filter_settings(self, mid: int) -> UpFilterSettings:
+        if self.source == "youtube":
+            row = self.app.youtube().db.execute("SELECT * FROM filter_settings WHERE channel_id=?", (str(mid),)).fetchone()
+            if row:
+                return UpFilterSettings(str(mid), row["min_duration"], row["max_duration"], row["min_date"], row["max_date"])
+            return UpFilterSettings(str(mid))
         return self.app.get_up_filter_settings(mid)
 
     def save_up_filter_settings(self, settings: UpFilterSettings) -> None:
+        if self.source == "youtube":
+            db = self.app.youtube().db
+            db.execute("INSERT INTO filter_settings(channel_id,min_duration,max_duration,min_date,max_date) VALUES(?,?,?,?,?) ON CONFLICT(channel_id) DO UPDATE SET min_duration=excluded.min_duration,max_duration=excluded.max_duration,min_date=excluded.min_date,max_date=excluded.max_date", (str(settings.mid), settings.min_duration, settings.max_duration, settings.min_date, settings.max_date)); db.commit(); return
         self.app.save_up_filter_settings(settings)
 
     def save_settings(self, config: dict) -> Path:
@@ -187,21 +241,33 @@ class DesktopController(QObject):
             return bool(self._handles) if name is None else name in self._handles
 
     def start_add_up(self, mid: int) -> bool:
+        if self.source == "youtube":
+            return self._start("add_up", lambda cancel, worker: self.app.youtube().add_channel(str(mid)), mid)
         return self._start("add_up", lambda cancel, worker: self.app.add_up(mid), mid)
 
     def start_scan(self, mid: Optional[int] = None) -> bool:
+        if self.source == "youtube":
+            return self._start("scan", lambda cancel, worker: self.app.youtube().scan(str(mid)), mid)
         return self._start("scan", lambda cancel, worker: self.app.scan(mid), mid)
 
     def start_check(self, mid: Optional[int] = None, media_type: str = "video") -> bool:
+        if self.source == "youtube":
+            return self._start("check", lambda cancel, worker: self.app.youtube().check_files(str(mid) if mid else None, media_type), mid)
         return self._start("check", lambda cancel, worker: self.app.check_files(mid, media_type), mid)
 
     def start_retry(self, mid: Optional[int] = None, media_type: str = "video") -> bool:
+        if self.source == "youtube":
+            return self._start("retry", lambda cancel, worker: self.app.youtube().reset_failed(str(mid) if mid else None, media_type), mid)
         return self._start("retry", lambda cancel, worker: self.app.reset_failed(mid, media_type), mid)
 
     def start_preview(self, mid: Optional[int], options: DownloadOptions) -> bool:
+        if self.source == "youtube":
+            return self._start("preview", lambda cancel, worker: self.app.youtube().preview(str(mid) if mid else None, options.media_type, options), mid)
         return self._start("preview", lambda cancel, worker: self.app.preview(mid, options), mid)
 
     def start_download(self, mid: Optional[int], options: DownloadOptions) -> bool:
+        if self.source == "youtube":
+            return self._start("download", lambda cancel, worker: self.app.youtube().download(str(mid) if mid else None, options.media_type, quality=options.quality, options=options, stop_event=cancel), mid)
         def work(cancel: threading.Event, worker: TaskWorker):
             prepared = self.app.prepare_download(mid, options)
             self.app.download_manager.set_options(options)

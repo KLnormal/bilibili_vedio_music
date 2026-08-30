@@ -1,6 +1,6 @@
 # Bilibili 视频工作台
 
-一个本地运行的 Bilibili UP 主投稿扫描、筛选和下载工具，提供命令行、PySide6
+一个本地运行的 Bilibili / YouTube 频道投稿扫描、筛选和下载工具，提供命令行、PySide6
 桌面界面和 Windows 单文件 EXE。数据保存在本地 SQLite，不上传账号信息或下载记录。
 
 ## 功能概览
@@ -13,6 +13,7 @@
 - DASH 合并、progressive 回退、清晰度选择、限速和可取消下载
 - SQLite 状态检查与缺失文件恢复
 - PySide6 桌面工作台和 Windows EXE 打包
+- YouTube 公开频道支持（`yt-dlp`，频道 URL、`@handle` 或 `UC...`）
 
 ## 环境安装
 
@@ -46,6 +47,11 @@ python main.py preview 488970166 --type video --quality 1080p
 python main.py download --mid 488970166 --type video
 python main.py download --mid 488970166 --type audio
 
+# YouTube：添加频道、扫描并下载
+python main.py add https://www.youtube.com/@example
+python main.py scan --source youtube --channel @example
+python main.py download --source youtube --channel @example --type video
+
 # 检查并按当前下载目录同步文件状态
 python main.py check 488970166 --type video
 python main.py status 488970166 --type audio
@@ -72,6 +78,9 @@ python main.py desktop
 在“设置”页选择下载根目录；保存后程序会验证目录可写并递归同步文件。目录切换期间
 若有扫描或下载任务运行，需先停止任务。任务页可以直接调整媒体类型、时长和日期，
 点击“预览”或“开始下载”时立即使用当前值。
+
+左侧“来源”切换器可在 Bilibili 与 YouTube 之间切换。YouTube 首次添加频道时会创建
+独立的 `youtube.db`；已下载文件位于 `downloads\YouTube`，不会混入 Bilibili 记录。
 
 ## Windows EXE
 

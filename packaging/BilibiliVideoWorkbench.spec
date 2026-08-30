@@ -8,6 +8,7 @@ project_root = Path(SPECPATH).parent
 hiddenimports = (
     collect_submodules("bilibili_crawler")
     + collect_submodules("qrcode")
+    + collect_submodules("yt_dlp")
 )
 datas = collect_data_files("qrcode")
 datas.append((str(project_root / "requirements.txt"), "."))

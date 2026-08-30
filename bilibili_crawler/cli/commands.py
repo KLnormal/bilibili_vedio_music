@@ -27,6 +27,9 @@ from .. import __version__
 from ..app import App, check_ffmpeg
 from ..filter.explain import explain
 from ..options import DownloadOptions, MEDIA_TYPES, QUALITY_TO_QN
+from ..youtube import YouTubeService, identify_channel
+from ..config.configuration import resolve_data_path
+from pathlib import Path
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -40,19 +43,24 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("login", help="interactive login (QR code or cookie paste)")
 
-    p_add = sub.add_parser("add", help="add an UP by mid")
-    p_add.add_argument("mid", type=int)
+    p_add = sub.add_parser("add", help="add a Bilibili UID or YouTube channel identifier")
+    p_add.add_argument("identifier", help="Bilibili numeric UID, YouTube channel URL, @handle or UC ID")
 
-    p_rm = sub.add_parser("remove", help="remove an UP by mid")
-    p_rm.add_argument("mid", type=int)
+    p_rm = sub.add_parser("remove", help="remove an UP")
+    p_rm.add_argument("identifier")
 
-    sub.add_parser("list", help="list all UPs")
+    p_list = sub.add_parser("list", help="list all UPs")
+    p_list.add_argument("--source", choices=("bilibili", "youtube"), default="bilibili")
 
     p_scan = sub.add_parser("scan", help="scan submissions (full or incremental)")
     p_scan.add_argument("--mid", type=int, default=None, help="scan a single mid")
+    p_scan.add_argument("--source", choices=("bilibili", "youtube"), default="bilibili")
+    p_scan.add_argument("--channel", default=None, help="YouTube channel ID (when --source youtube)")
 
     p_dl = sub.add_parser("download", help="download PENDING videos once")
     p_dl.add_argument("--mid", type=int, default=None)
+    p_dl.add_argument("--source", choices=("bilibili", "youtube"), default="bilibili")
+    p_dl.add_argument("--channel", default=None)
     p_dl.add_argument("--quality", choices=list(QUALITY_TO_QN.keys()), default=None,
                       help="720p/1080p/1080p+/1080p60/4k")
     p_dl.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video",
@@ -67,14 +75,20 @@ def _build_parser() -> argparse.ArgumentParser:
     p_retry = sub.add_parser("retry", help="reset FAILED videos to PENDING")
     p_retry.add_argument("--mid", type=int, default=None)
     p_retry.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video")
+    p_retry.add_argument("--source", choices=("bilibili", "youtube"), default="bilibili")
+    p_retry.add_argument("--channel", default=None)
 
     p_status = sub.add_parser("status", help="show download status (global or per UP)")
     p_status.add_argument("mid", type=int, nargs="?", default=None)
     p_status.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video")
+    p_status.add_argument("--source", choices=("bilibili", "youtube"), default="bilibili")
+    p_status.add_argument("--channel", default=None)
 
     p_check = sub.add_parser("check", help="check DB vs local files, recover MISSING -> PENDING")
     p_check.add_argument("mid", type=int, nargs="?", default=None)
     p_check.add_argument("--type", dest="media_type", choices=MEDIA_TYPES, default="video")
+    p_check.add_argument("--source", choices=("bilibili", "youtube"), default="bilibili")
+    p_check.add_argument("--channel", default=None)
 
     p_preview = sub.add_parser("preview", help="preview download decisions (dry-run)")
     p_preview.add_argument("mid", type=int, nargs="?", default=None)
@@ -87,6 +101,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_preview.add_argument("--max-date", default="0",
                            help="end publish date 20xx.xx.xx, 0=unlimited")
     p_preview.add_argument("--explain", metavar="BVID", default=None, help="explain a single video")
+    p_preview.add_argument("--source", choices=("bilibili", "youtube"), default="bilibili")
+    p_preview.add_argument("--channel", default=None)
 
     p_dlbv = sub.add_parser("download-bv", help="download video(s) directly by bvid (bypass UP rules)")
     p_dlbv.add_argument("bvids", nargs="+", help="one or more BV ids")
@@ -98,13 +114,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_bl = sub.add_parser("blacklist", help="manage UP title blacklist")
     bl_sub = p_bl.add_subparsers(dest="bl_action", required=True)
     bl_add = bl_sub.add_parser("add", help="add a keyword")
-    bl_add.add_argument("mid", type=int)
+    bl_add.add_argument("mid")
     bl_add.add_argument("keyword")
     bl_rm = bl_sub.add_parser("remove", help="remove a keyword")
-    bl_rm.add_argument("mid", type=int)
+    bl_rm.add_argument("mid")
     bl_rm.add_argument("keyword")
     bl_list = bl_sub.add_parser("list", help="list keywords")
-    bl_list.add_argument("mid", type=int)
+    bl_list.add_argument("mid")
+    for bl_parser in (bl_add, bl_rm, bl_list):
+        bl_parser.add_argument("--source", choices=("bilibili", "youtube"), default="bilibili")
 
     p_limit = sub.add_parser("limit", help="show or set download speed limit (MB/s)")
     p_limit.add_argument("mbps", type=float, nargs="?")
@@ -123,6 +141,18 @@ def _build_parser() -> argparse.ArgumentParser:
 def _cmd_login(app: App) -> int:
     ok = app.login.login()
     return 0 if ok else 1
+
+
+def _youtube_service(app: App) -> YouTubeService:
+    configured = app.config.get("youtube", {}).get("database_path")
+    db_path = Path(configured).expanduser().resolve() if configured else resolve_data_path(app.config).with_name("youtube.db")
+    return YouTubeService(db_path, app.download_root, ffmpeg_path=app.downloader.ffmpeg_path,
+                          min_duration=int(app.config.get("filter", {}).get("min_duration", 0)),
+                          max_duration=int(app.config.get("filter", {}).get("max_duration", 0)))
+
+
+def _youtube_channel_arg(args) -> Optional[str]:
+    return getattr(args, "channel", None)
 
 
 def _cmd_add(app: App, mid: int) -> int:
@@ -355,12 +385,43 @@ def main(argv: Optional[list] = None) -> int:
         if args.command == "login":
             return _cmd_login(app)
         if args.command == "add":
-            return _cmd_add(app, args.mid)
+            kind, value = identify_channel(args.identifier)
+            if kind == "bilibili":
+                return _cmd_add(app, int(value))
+            yt = _youtube_service(app)
+            try:
+                channel = yt.add_channel(value)
+                print(f"YouTube channel added: {channel.name} ({channel.channel_id})")
+                return 0
+            finally:
+                yt.close()
         if args.command == "remove":
-            return _cmd_remove(app, args.mid)
+            kind, value = identify_channel(args.identifier)
+            if kind == "bilibili":
+                return _cmd_remove(app, int(value))
+            yt = _youtube_service(app)
+            try:
+                ok = yt.remove_channel(value)
+                print(f"YouTube channel {'removed' if ok else 'not found'}: {value}")
+                return 0 if ok else 1
+            finally:
+                yt.close()
         if args.command == "list":
+            if args.source == "youtube":
+                yt = _youtube_service(app)
+                try:
+                    for channel in yt.list_channels(): print(f"channel={channel.channel_id:<24} {channel.name}")
+                    return 0
+                finally: yt.close()
             return _cmd_list(app)
         if args.command == "scan":
+            if args.source == "youtube":
+                yt = _youtube_service(app)
+                try:
+                    channel = _youtube_channel_arg(args)
+                    if not channel: raise ValueError("YouTube 扫描需要 --channel")
+                    result = yt.scan(channel); print(f"YouTube scan: new={result['new']} existing={result['existing']}"); return 0
+                finally: yt.close()
             return _cmd_scan(app, args.mid)
         if args.command == "download":
             opts = DownloadOptions(
@@ -371,15 +432,32 @@ def main(argv: Optional[list] = None) -> int:
                 min_date=args.min_date,
                 max_date=args.max_date,
             )
+            if args.source == "youtube":
+                yt = _youtube_service(app)
+                try:
+                    result = yt.download(_youtube_channel_arg(args), opts.media_type, quality=opts.quality, options=opts)
+                    print(f"downloaded={result['downloaded']} failed={result['failed']}"); return 0 if not result['failed'] else 1
+                finally: yt.close()
             return _cmd_download(app, args.mid, opts)
         if args.command == "download-bv":
             opts = DownloadOptions(quality=args.quality, media_type=args.media_type)
             return _cmd_download_bv(app, args.bvids, opts)
         if args.command == "retry":
+            if args.source == "youtube":
+                print("YouTube retry is performed by a subsequent download/preview pass.")
+                return 0
             return _cmd_retry(app, args.mid, args.media_type)
         if args.command == "status":
+            if args.source == "youtube":
+                yt = _youtube_service(app)
+                try: print(yt.status(_youtube_channel_arg(args), args.media_type)); return 0
+                finally: yt.close()
             return _cmd_status(app, args.mid, args.media_type)
         if args.command == "check":
+            if args.source == "youtube":
+                yt = _youtube_service(app)
+                try: print(f"root: {yt.save_root}"); return 0
+                finally: yt.close()
             return _cmd_check(app, args.mid, args.media_type)
         if args.command == "preview":
             opts = DownloadOptions(
@@ -390,9 +468,24 @@ def main(argv: Optional[list] = None) -> int:
                 min_date=args.min_date,
                 max_date=args.max_date,
             )
+            if args.source == "youtube":
+                yt = _youtube_service(app)
+                try:
+                    result = yt.preview(_youtube_channel_arg(args), opts.media_type, opts); print(result["stats"]); return 0
+                finally: yt.close()
             return _cmd_preview(app, args.mid, opts, args.explain)
         if args.command == "blacklist":
-            return _cmd_blacklist(app, args.bl_action, args.mid, getattr(args, "keyword", None))
+            if args.source == "youtube":
+                yt = _youtube_service(app)
+                try:
+                    channel = args.mid
+                    if args.bl_action == "list": print("\\n".join(yt._keywords("blacklist", channel))); return 0
+                    table = "blacklist"
+                    if args.bl_action == "add": yt.db.execute(f"INSERT OR IGNORE INTO {table}(channel_id,keyword) VALUES(?,?)", (channel,args.keyword))
+                    else: yt.db.execute(f"DELETE FROM {table} WHERE channel_id=? AND keyword=?", (channel,args.keyword))
+                    yt.db.commit(); return 0
+                finally: yt.close()
+            return _cmd_blacklist(app, args.bl_action, int(args.mid), getattr(args, "keyword", None))
         if args.command == "limit":
             return _cmd_limit(app, args.mbps)
         if args.command == "run":

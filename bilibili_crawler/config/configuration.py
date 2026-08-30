@@ -19,6 +19,7 @@ import yaml
 # ---------------------------------------------------------------------------
 DEFAULT_CONFIG: Dict[str, Any] = {
     "database": {"path": "bilibili.db"},
+    "youtube": {"database_path": ""},
     "auth": {"cookie_file": "cookies.json"},
     "crawler": {
         "page_size": 30,

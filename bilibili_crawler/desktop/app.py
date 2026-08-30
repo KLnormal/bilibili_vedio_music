@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox, QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QInputDialog,
     QPushButton, QProgressBar, QScrollArea, QSpinBox, QStackedWidget,
-    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget, QTabWidget,
 )
 
 from ..app import App
@@ -129,7 +129,7 @@ class OverviewPage(QWidget):
         for row, up in enumerate(ups):
             self.up_table.setItem(row, 0, _item(up.name or "未命名"))
             self.up_table.setItem(row, 1, _item(up.mid))
-            self.up_table.setItem(row, 2, _item(self.controller.app.repo.count_videos(up.mid)))
+            self.up_table.setItem(row, 2, _item(self.controller.count_videos(up.mid)))
             self.up_table.setItem(row, 3, _item(up.last_crawl_time or "-"))
 
     def refresh_runtime(self) -> None:
@@ -426,11 +426,11 @@ class UpPage(QWidget):
         actions.addStretch()
         root.addLayout(actions)
 
-    def selected_mid(self) -> Optional[int]:
+    def selected_mid(self) -> Optional[str]:
         row = self.table.currentRow()
         if row < 0:
             return None
-        return int(self.table.item(row, 1).text())
+        return self.table.item(row, 1).text()
 
     def refresh(self) -> None:
         ups = self.controller.list_ups()
@@ -438,7 +438,7 @@ class UpPage(QWidget):
         for row, up in enumerate(ups):
             self.table.setItem(row, 0, _item(up.name or "未命名"))
             self.table.setItem(row, 1, _item(up.mid))
-            self.table.setItem(row, 2, _item(self.controller.app.repo.count_videos(up.mid)))
+            self.table.setItem(row, 2, _item(self.controller.count_videos(up.mid)))
             self.table.setItem(row, 3, _item(len(self.controller.list_blacklist(up.mid))))
             self.table.setItem(row, 4, _item(up.last_crawl_time or "-"))
             enabled = QCheckBox()
@@ -447,7 +447,7 @@ class UpPage(QWidget):
             self.table.setCellWidget(row, 5, enabled)
 
     def add_up(self) -> None:
-        value, ok = QInputDialog.getInt(self, "添加 UP", "请输入 UID：", minValue=1)
+        value, ok = QInputDialog.getText(self, "添加 UP", "Bilibili UID / YouTube 频道 URL、@账号或 UC ID：")
         if ok:
             self.controller.start_add_up(value)
 
@@ -487,6 +487,27 @@ class UpPage(QWidget):
             self.controller.remove_up(mid)
             self.refresh()
             self.on_refresh()
+
+
+class DownloadedPage(QWidget):
+    """Read-only view of completed files, separated by platform."""
+    def __init__(self, controller: DesktopController):
+        super().__init__(); self.controller = controller
+        root = QVBoxLayout(self); title = QLabel("已下载"); title.setObjectName("pageTitle"); root.addWidget(title)
+        self.tabs = QTabWidget(); root.addWidget(self.tabs, 1)
+        self.tables = {}
+        for source, label in (("bilibili", "Bilibili"), ("youtube", "YouTube")):
+            table = QTableWidget(0, 5); table.setHorizontalHeaderLabels(["标题", "标识", "类型", "状态", "本地文件"]); table.horizontalHeader().setStretchLastSection(True)
+            self.tables[source] = table; self.tabs.addTab(table, label)
+
+    def refresh(self):
+        for source, table in self.tables.items():
+            rows = []
+            for media_type in ("video", "audio"):
+                rows.extend((v, media_type) for v in self.controller.downloaded_videos(source, media_type))
+            table.setRowCount(len(rows))
+            for i, (video, media_type) in enumerate(rows):
+                table.setItem(i, 0, _item(video.title)); table.setItem(i, 1, _item(video.bvid)); table.setItem(i, 2, _item(media_type)); table.setItem(i, 3, _item(video.download_status.value)); table.setItem(i, 4, _item(video.download_path))
 
 
 class TasksPage(QWidget):
@@ -1070,7 +1091,7 @@ class MainWindow(QMainWindow):
     def __init__(self, controller: DesktopController):
         super().__init__()
         self.controller = controller
-        self.setWindowTitle("Bilibili 视频采集工作台")
+        self.setWindowTitle("Bilibili / YouTube 视频采集工作台")
         self.resize(1440, 900)
         self.setStyleSheet(STYLES)
         central = QWidget(); self.setCentralWidget(central)
@@ -1079,18 +1100,26 @@ class MainWindow(QMainWindow):
         nav_layout = QVBoxLayout(nav)
         brand = QLabel("BILIBILI\n采集工作台"); brand.setObjectName("brand")
         nav_layout.addWidget(brand)
+        source_box = QGroupBox("来源")
+        source_layout = QVBoxLayout(source_box)
+        self.source_combo = QComboBox(); self.source_combo.addItems(["Bilibili", "YouTube"])
+        self.source_combo.currentIndexChanged.connect(self._source_changed)
+        source_layout.addWidget(self.source_combo)
+        nav_layout.addWidget(source_box)
         self.pages = QStackedWidget()
         self.overview = OverviewPage(controller)
         self.ups = UpPage(controller, self.refresh_all)
         self.tasks = TasksPage(controller)
+        self.downloaded = DownloadedPage(controller)
         self.settings = SettingsPage(controller)
-        for name, page in [("总览", self.overview), ("UP 管理", self.ups), ("任务与视频", self.tasks), ("设置", self.settings)]:
+        for name, page in [("总览", self.overview), ("UP 管理", self.ups), ("任务与视频", self.tasks), ("已下载", self.downloaded), ("设置", self.settings)]:
             button = _button(name, lambda checked=False, p=page: self.pages.setCurrentWidget(p))
             button.setProperty("nav", True); nav_layout.addWidget(button)
         nav_layout.addStretch()
         login = _button("登录 Bilibili", self.show_login, True); nav_layout.addWidget(login)
+        self.login_button = login
         layout.addWidget(nav); layout.addWidget(self.pages, 1)
-        self.pages.addWidget(self.overview); self.pages.addWidget(self.ups); self.pages.addWidget(self.tasks); self.pages.addWidget(self.settings)
+        self.pages.addWidget(self.overview); self.pages.addWidget(self.ups); self.pages.addWidget(self.tasks); self.pages.addWidget(self.downloaded); self.pages.addWidget(self.settings)
         self.statusBar().showMessage("就绪")
         controller.task_started.connect(lambda name, mid: self.statusBar().showMessage(f"任务开始：{name}"))
         controller.task_finished.connect(self.task_finished)
@@ -1099,6 +1128,11 @@ class MainWindow(QMainWindow):
         # Runtime indicators are cheap and update frequently. Tables are only
         # rebuilt on initial load, explicit refresh, or task completion.
         self.timer = QTimer(self); self.timer.timeout.connect(self.refresh_runtime); self.timer.start(500)
+        self.refresh_all()
+
+    def _source_changed(self, index: int) -> None:
+        self.controller.set_source("youtube" if index else "bilibili")
+        self.login_button.setVisible(index == 0)
         self.refresh_all()
 
     def activate_for_interaction(self) -> None:
@@ -1118,7 +1152,7 @@ class MainWindow(QMainWindow):
         self.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def refresh_all(self):
-        self.overview.refresh(); self.ups.refresh(); self.tasks.refresh()
+        self.overview.refresh(); self.ups.refresh(); self.tasks.refresh(); self.downloaded.refresh()
 
     def refresh_runtime(self):
         self.overview.refresh_runtime(); self.tasks.refresh_runtime()
