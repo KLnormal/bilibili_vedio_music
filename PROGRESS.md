@@ -12,7 +12,7 @@
 | 版本 | v0.2.0 |
 | 里程碑 | v0.1.0 十项目标已实现；v0.2.0 八个 Phase **全部完成** |
 | 当前分支 | `bilibili_branch_download` |
-| 测试 | 89 个核心/桌面/下载器/CLI/目录切换测试通过；花譜在线扫描为显式 opt-in（默认跳过） |
+| 测试 | 92 个核心/桌面/下载器/CLI/目录切换测试通过；花譜在线扫描为显式 opt-in（默认跳过） |
 | 关键验证 | ✅ 1080P / 4K 下载链路可行（ffprobe 实测） |
 
 ---
@@ -87,8 +87,8 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 | app | `app.py` | ✅ 稳定 | 新增 `status`/`check_files`/`download_bv`；当前下载目录同步、切换与轻量文件预检 |
 | options | `options.py` | ✅ 稳定 | `DownloadOptions` 统一参数对象 + 质量映射 |
 | tests | `tests/{test_core,test_downloader,test_packaging,e2e_demo,test_desktop}.py` | ✅ 稳定 | 核心、分页续扫、下载器模式、打包引导与桌面交互离线测试 |
-| desktop | `desktop/{app,controller,workers}.py` | ✅ 稳定 | PySide6 工作台、UP 级筛选、后台任务、登录与设置；下载目录浏览、后台同步、运行中切换保护 |
-| youtube | `youtube.py` | ✅ 稳定 | YouTube 独立频道、视频/音频状态、筛选与下载；支持全部启用频道扫描 |
+| desktop | `desktop/{app,controller,workers}.py` | ✅ 稳定 | PySide6 工作台、UP 级筛选、后台任务、Bilibili/YouTube 登录与设置；下载目录浏览、后台同步、运行中切换保护 |
+| youtube | `youtube.py` | ✅ 稳定 | YouTube 独立频道、视频/音频状态、筛选与下载；支持全部启用频道扫描、Cookie 登录和严格清晰度 |
 | packaging | `packaging/{bootstrap.py,*.spec,build_windows.ps1}` | ✅ 稳定 | PyInstaller 单文件 EXE、首次运行环境检查、用户目录配置和 ffmpeg 便携安装 |
 
 ---
@@ -96,6 +96,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 ## 5. 已修复问题记录（Changelog）
 
 | 2026-08-30 | YouTube 桌面扫描未启动 | “任务与视频”页的“全部 UP”空选择被转成字面量 `None`，现由服务层聚合扫描全部启用频道；CLI 同步支持省略 `--channel`。 |
+| 2026-08-30 | YouTube 下载参数被桌面操作覆盖 | “UP 管理 → 下载”改用设置页默认清晰度/媒体类型；显式视频清晰度不再静默降级，新增 YouTube Cookie 登录配置与后台检查。 |
 
 | 提交 | 问题 | 说明 |
 |------|------|------|

@@ -146,7 +146,10 @@ def _cmd_login(app: App) -> int:
 def _youtube_service(app: App) -> YouTubeService:
     configured = app.config.get("youtube", {}).get("database_path")
     db_path = Path(configured).expanduser().resolve() if configured else resolve_data_path(app.config).with_name("youtube.db")
+    yt_cfg = app.config.get("youtube", {})
     return YouTubeService(db_path, app.download_root, ffmpeg_path=app.downloader.ffmpeg_path,
+                          cookie_file=str(yt_cfg.get("cookie_file", "")),
+                          cookies_from_browser=str(yt_cfg.get("cookies_from_browser", "")),
                           min_duration=int(app.config.get("filter", {}).get("min_duration", 0)),
                           max_duration=int(app.config.get("filter", {}).get("max_duration", 0)))
 

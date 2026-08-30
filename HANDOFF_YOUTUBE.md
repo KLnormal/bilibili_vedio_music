@@ -23,6 +23,12 @@
 - 扫描统一使用频道 `/videos` 地址；频道主页只返回导航条目时不再被误判为扫描成功。
 - 已用 KAF 公开频道实测扫描 337 个视频，并按 120–150 秒范围成功下载 14 个 720p 视频。
 
+### 2026-08-30 下载质量与登录
+
+- “UP 管理 → 下载”现在遵循设置页的清晰度和媒体类型，不再固定为默认视频。
+- YouTube 视频指定清晰度时使用精确高度匹配，无法提供目标清晰度会失败并提示，避免静默降级。
+- 设置页支持 Netscape Cookie 文件或 Chrome/Edge/Firefox 等浏览器 Cookie，并可后台检查登录态；音频任务固定输出 `.m4a`。
+
 ### YouTube 独立数据库
 
 - 新增 `bilibili_crawler/youtube.py`。
@@ -87,7 +93,7 @@ $env:QT_QPA_PLATFORM = "offscreen"
 当前结果：
 
 ```text
-Ran 87 tests
+Ran 92 tests
 OK (skipped=1)
 ```
 
@@ -123,7 +129,8 @@ python main.py status --source youtube --channel UCxxxxxxxxxxxxxxxxxxxxxxxx
 
 ## 已知限制与后续工作
 
-1. YouTube 目前只面向公开频道，尚未实现 Google 登录、Cookie 导入、私密/会员视频、直播和播放列表支持。
+1. YouTube 目前只面向频道扫描；Google OAuth 登录、直播和播放列表仍未实现。已支持通过
+   Netscape Cookie 文件或本机浏览器 Cookie 使用登录态（包括需要登录的高质量/会员格式）。
 2. YouTube 的 `retry` CLI 目前只提示后续重新执行下载，建议补充与 Bilibili 一致的 FAILED → PENDING 重置逻辑。
 3. YouTube 文件同步目前是基础版本，建议补充递归索引、重复文件选择、目录切换和缺失文件恢复的专门测试。
 4. YouTube 在线测试尚未纳入默认测试集，建议增加 `test_live_youtube.py`，并通过环境变量显式启用。

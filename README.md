@@ -30,6 +30,11 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py login
 ```
 
+YouTube 使用 yt-dlp 登录态。桌面端“设置”页可选择从 Chrome、Edge、Firefox 等浏览器
+读取 Cookie，或填写 Netscape Cookie 文件路径，然后点击“检查 YouTube 登录态”。配置
+项为 `youtube.cookie_file` 和 `youtube.cookies_from_browser`；两者同时填写时优先使用
+浏览器来源。指定视频清晰度无法获得时会明确失败，不再静默降级到 720P。
+
 默认配置文件为项目根目录的 `config.yaml`。使用个人配置时可通过
 `--config D:\path\config.yaml` 指定。请勿将 Cookie、数据库或下载目录提交到 Git。
 
@@ -81,6 +86,8 @@ python main.py desktop
 
 左侧“来源”切换器可在 Bilibili 与 YouTube 之间切换。YouTube 首次添加频道时会创建
 独立的 `youtube.db`；已下载文件位于 `downloads\YouTube`，不会混入 Bilibili 记录。
+“UP 管理”页的下载按钮使用设置页中的默认清晰度和媒体类型；“任务与视频”页仍可为
+单次任务覆盖。音频任务始终生成 `.m4a`，1080P 只对视频任务有意义。
 
 ## Windows EXE
 

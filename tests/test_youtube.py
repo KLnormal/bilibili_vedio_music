@@ -16,6 +16,27 @@ class YouTubeInputTests(unittest.TestCase):
 
 
 class YouTubeDatabaseTests(unittest.TestCase):
+    def test_auth_options_support_cookie_file_and_browser(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cookie = root / "youtube.cookies.txt"
+            cookie.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+            service = YouTubeService(root / "youtube.db", root / "downloads", cookie_file=str(cookie))
+            options = service._auth_options()
+            self.assertEqual(options["cookiefile"], str(cookie.resolve()))
+            service.cookies_from_browser = "Edge"
+            options = service._auth_options()
+            self.assertEqual(options["cookiesfrombrowser"], ("edge",))
+            self.assertNotIn("cookiefile", options)
+            service.close()
+
+    def test_missing_cookie_file_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = YouTubeService(Path(tmp) / "youtube.db", Path(tmp) / "downloads", cookie_file=str(Path(tmp) / "missing.txt"))
+            with self.assertRaisesRegex(RuntimeError, "Cookie 文件不存在"):
+                service._auth_options()
+            service.close()
+
     def test_database_and_media_state_are_isolated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

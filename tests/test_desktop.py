@@ -173,6 +173,15 @@ class DesktopControlsTest(unittest.TestCase):
         self.assertEqual((options.min_date, options.max_date), ("0", "0"))
         self.assertTrue(options.date_filter_active)
 
+    def test_download_buttons_use_settings_quality_and_media_defaults(self):
+        self.app.config["download"]["qn"] = 80
+        self.app.config["download"]["type"] = "audio"
+        options = self.window.controller.default_download_options()
+        self.assertEqual((options.quality, options.media_type), ("1080p", "audio"))
+        self.window.tasks.load_download_defaults()
+        self.assertEqual(self.window.tasks.quality.currentText(), "1080p")
+        self.assertEqual(self.window.tasks.media.currentText(), "audio")
+
     def test_task_options_are_used_by_preview_rules(self):
         created = int(datetime(2025, 6, 1).timestamp())
         self.app.repo.insert_video(Video(

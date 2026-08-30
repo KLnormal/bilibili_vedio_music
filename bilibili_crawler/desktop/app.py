@@ -474,10 +474,10 @@ class UpPage(QWidget):
             self.on_refresh()
 
     def preview(self):
-        self.controller.start_preview(self.selected_mid(), DownloadOptions())
+        self.controller.start_preview(self.selected_mid(), self.controller.default_download_options())
 
     def download(self):
-        self.controller.start_download(self.selected_mid(), DownloadOptions())
+        self.controller.start_download(self.selected_mid(), self.controller.default_download_options())
 
     def remove(self):
         mid = self.selected_mid()
@@ -682,6 +682,7 @@ class TasksPage(QWidget):
         self.mid.currentIndexChanged.connect(self._load_filter_defaults)
         self.mid.currentIndexChanged.connect(self._refresh_media_view)
         self.media.currentIndexChanged.connect(self._refresh_media_view)
+        self.load_download_defaults()
         controller.task_started.connect(self._task_started)
         controller.task_finished.connect(self._task_finished)
         controller.task_failed.connect(self._task_failed)
@@ -705,6 +706,16 @@ class TasksPage(QWidget):
         self._load_filter_defaults()
         self._refresh_media_view()
         self.refresh_runtime()
+
+    def load_download_defaults(self):
+        """Reflect Settings-page quality/type defaults in task controls."""
+        options = self.controller.default_download_options()
+        self.quality.blockSignals(True)
+        self.quality.setCurrentText(options.quality or "默认")
+        self.quality.blockSignals(False)
+        self.media.blockSignals(True)
+        self.media.setCurrentText(options.media_type)
+        self.media.blockSignals(False)
 
     def _refresh_media_view(self, *_args):
         media_type = self.media.currentText()
@@ -943,9 +954,9 @@ class SettingsPage(QWidget):
         root.addWidget(title)
         form = QFormLayout()
         self.fields = {}
-        for key, label in [("database.path", "数据库路径"), ("auth.cookie_file", "Cookie 文件"),
+        for key, label in [("database.path", "数据库路径"), ("auth.cookie_file", "Bilibili Cookie 文件"),
                            ("download.save_root", "下载目录"), ("download.ffmpeg_path", "ffmpeg 路径"),
-                           ("logging.file", "日志文件")]:
+                           ("logging.file", "日志文件"), ("youtube.cookie_file", "YouTube Cookie 文件")]:
             edit = QLineEdit()
             self.fields[key] = edit
             if key == "download.save_root":
@@ -954,6 +965,13 @@ class SettingsPage(QWidget):
                 row_layout.setContentsMargins(0, 0, 0, 0)
                 row_layout.addWidget(edit, 1)
                 row_layout.addWidget(_button("浏览", self.browse_download_root))
+                form.addRow(label, row)
+            elif key == "youtube.cookie_file":
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.addWidget(edit, 1)
+                row_layout.addWidget(_button("浏览", self.browse_youtube_cookie))
                 form.addRow(label, row)
             else:
                 form.addRow(label, edit)
@@ -964,15 +982,26 @@ class SettingsPage(QWidget):
         self.quality = QComboBox(); self.quality.addItems(list(QUALITY_TO_QN))
         self.media = QComboBox(); self.media.addItems(list(MEDIA_TYPES))
         self.dash = QCheckBox("优先使用 DASH + ffmpeg")
+        self.youtube_browser = QComboBox()
+        self.youtube_browser.addItem("不使用浏览器 Cookie", "")
+        for browser in ("Chrome", "Edge", "Firefox", "Brave", "Opera", "Chromium", "Vivaldi"):
+            self.youtube_browser.addItem(f"从 {browser} 读取 Cookie", browser.lower())
         for label, widget in [("并发数", self.concurrency), ("限速", self.limit),
                               ("默认最小时长", self.min_duration), ("默认最大时长", self.max_duration),
                               ("清晰度", self.quality), ("媒体类型", self.media)]:
             form.addRow(label, widget)
         form.addRow("媒体流", self.dash)
+        form.addRow("YouTube 登录来源", self.youtube_browser)
+        auth_hint = QLabel("YouTube 1080P/会员格式可能需要登录。可选择浏览器 Cookie，或在上方填写 Netscape Cookie 文件。")
+        auth_hint.setObjectName("muted")
+        auth_hint.setWordWrap(True)
+        form.addRow("", auth_hint)
         root.addLayout(form)
         root.addStretch()
         self.save_button = _button("保存设置", self.save, True)
         root.addWidget(self.save_button)
+        self.auth_check_button = _button("检查 YouTube 登录态", self.check_youtube_auth)
+        root.addWidget(self.auth_check_button)
         controller.task_finished.connect(self._task_finished)
         controller.task_failed.connect(self._task_failed)
         self.load()
@@ -998,12 +1027,19 @@ class SettingsPage(QWidget):
         self.quality.setCurrentText({64:"720p",80:"1080p",112:"1080p+",116:"1080p60",120:"4k"}.get(int(self._get(cfg,"download.qn",80)), "1080p"))
         self.media.setCurrentText(self._get(cfg, "download.type", "video"))
         self.dash.setChecked(bool(self._get(cfg, "download.prefer_dash", True)))
+        self.youtube_browser.setCurrentIndex(max(0, self.youtube_browser.findData(self._get(cfg, "youtube.cookies_from_browser", ""))))
 
     def browse_download_root(self):
         current = self.fields["download.save_root"].text().strip() or str(Path.cwd())
         selected = QFileDialog.getExistingDirectory(self, "选择下载目录", current)
         if selected:
             self.fields["download.save_root"].setText(str(Path(selected).expanduser().resolve(strict=False)))
+
+    def browse_youtube_cookie(self):
+        current = self.fields["youtube.cookie_file"].text().strip() or str(Path.cwd())
+        selected, _ = QFileDialog.getOpenFileName(self, "选择 YouTube Netscape Cookie 文件", current, "Cookie 文件 (*.txt *.cookies);;所有文件 (*.*)")
+        if selected:
+            self.fields["youtube.cookie_file"].setText(str(Path(selected).expanduser().resolve(strict=False)))
 
     def save(self):
         cfg = self.controller.settings()
@@ -1016,6 +1052,7 @@ class SettingsPage(QWidget):
                                 "qn": QUALITY_TO_QN[self.quality.currentText()], "type": self.media.currentText(),
                                 "prefer_dash": self.dash.isChecked()})
         cfg["filter"].update({"min_duration": self.min_duration.value(), "max_duration": self.max_duration.value()})
+        cfg.setdefault("youtube", {})["cookies_from_browser"] = self.youtube_browser.currentData() or ""
         try:
             # Directory validation and recursive reconciliation can take time;
             # run the save through the controller worker so the Qt event loop
@@ -1028,7 +1065,19 @@ class SettingsPage(QWidget):
             self.save_button.setText("正在保存并同步目录…")
         except Exception as exc: QMessageBox.critical(self, "保存失败", str(exc))
 
+    def check_youtube_auth(self):
+        if self.controller.start_youtube_auth_check():
+            self.auth_check_button.setEnabled(False)
+            self.auth_check_button.setText("正在检查 YouTube 登录态…")
+        else:
+            QMessageBox.warning(self, "无法检查", "已有任务正在运行，或应用正在退出")
+
     def _task_finished(self, name, result):
+        if name == "youtube_login":
+            self.auth_check_button.setEnabled(True)
+            self.auth_check_button.setText("检查 YouTube 登录态")
+            QMessageBox.information(self, "YouTube 登录", "YouTube 登录态有效，可用于下载高质量格式。")
+            return
         if name != "settings":
             return
         self.save_button.setEnabled(True)
@@ -1037,6 +1086,11 @@ class SettingsPage(QWidget):
         QMessageBox.information(self, "设置已保存", f"已保存到：\n{result}")
 
     def _task_failed(self, name, message):
+        if name == "youtube_login":
+            self.auth_check_button.setEnabled(True)
+            self.auth_check_button.setText("检查 YouTube 登录态")
+            QMessageBox.warning(self, "YouTube 登录失败", message)
+            return
         if name != "settings":
             return
         self.save_button.setEnabled(True)
@@ -1118,6 +1172,9 @@ class MainWindow(QMainWindow):
         nav_layout.addStretch()
         login = _button("登录 Bilibili", self.show_login, True); nav_layout.addWidget(login)
         self.login_button = login
+        youtube_login = _button("配置 YouTube 登录", self.show_youtube_login, True); nav_layout.addWidget(youtube_login)
+        self.youtube_login_button = youtube_login
+        youtube_login.setVisible(False)
         layout.addWidget(nav); layout.addWidget(self.pages, 1)
         self.pages.addWidget(self.overview); self.pages.addWidget(self.ups); self.pages.addWidget(self.tasks); self.pages.addWidget(self.downloaded); self.pages.addWidget(self.settings)
         self.statusBar().showMessage("就绪")
@@ -1133,6 +1190,9 @@ class MainWindow(QMainWindow):
     def _source_changed(self, index: int) -> None:
         self.controller.set_source("youtube" if index else "bilibili")
         self.login_button.setVisible(index == 0)
+        self.youtube_login_button.setVisible(index == 1)
+        if index == 1:
+            self.tasks.load_download_defaults()
         self.refresh_all()
 
     def activate_for_interaction(self) -> None:
@@ -1162,12 +1222,18 @@ class MainWindow(QMainWindow):
         if name == "preview" and isinstance(result, dict):
             stats = result.get("stats", {})
             QMessageBox.information(self, "预览结果", "\n".join(f"{k}: {v}" for k, v in stats.items()) or "没有视频")
+        if name == "settings":
+            self.tasks.load_download_defaults()
         self.refresh_all()
 
     def show_login(self):
         dialog = LoginDialog(self.controller, self)
         dialog.show()
         self._login_dialog = dialog
+
+    def show_youtube_login(self):
+        self.pages.setCurrentWidget(self.settings)
+        self.settings.auth_check_button.setFocus()
 
     def closeEvent(self, event):
         if self.controller.is_running() and QMessageBox.question(self, "任务进行中", "仍有任务在运行，确定退出吗？") != QMessageBox.StandardButton.Yes:

@@ -19,7 +19,13 @@ import yaml
 # ---------------------------------------------------------------------------
 DEFAULT_CONFIG: Dict[str, Any] = {
     "database": {"path": "bilibili.db"},
-    "youtube": {"database_path": ""},
+    "youtube": {
+        "database_path": "",
+        # Optional Netscape cookie file or browser session for private/high-
+        # quality YouTube formats.  Secrets stay in the external cookie file.
+        "cookie_file": "",
+        "cookies_from_browser": "",
+    },
     "auth": {"cookie_file": "cookies.json"},
     "crawler": {
         "page_size": 30,

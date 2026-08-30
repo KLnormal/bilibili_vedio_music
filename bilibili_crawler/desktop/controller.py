@@ -17,7 +17,7 @@ from ..config.configuration import save_config
 from ..download_directory import normalize_download_root
 from ..database.models import DownloadStatus
 from ..database.models import UpFilterSettings
-from ..options import DownloadOptions
+from ..options import DownloadOptions, QN_TO_QUALITY
 from .workers import TaskWorker
 from ..youtube import identify_channel, YouTubeChannel
 
@@ -108,6 +108,16 @@ class DesktopController(QObject):
 
     def settings(self) -> dict:
         return copy.deepcopy(self.app.config)
+
+    def default_download_options(self) -> DownloadOptions:
+        """Build options from Settings-page defaults for UP-page actions."""
+        config = self.app.config
+        download = config.get("download", {})
+        try:
+            quality = QN_TO_QUALITY.get(int(download.get("qn", 80)))
+        except (TypeError, ValueError):
+            quality = None
+        return DownloadOptions(quality=quality, media_type=str(download.get("type", "video")))
 
     def preview_sync(self, mid, options):
         if self.source == "youtube":
@@ -306,6 +316,12 @@ class DesktopController(QObject):
             return False
 
         return self._start("login", work)
+
+    def start_youtube_auth_check(self) -> bool:
+        """Validate configured YouTube Cookie/browser authentication in a worker."""
+        def work(cancel: threading.Event, worker: TaskWorker):
+            return self.app.youtube().check_authentication()
+        return self._start("youtube_login", work)
 
     def pause(self, value: bool) -> None:
         self.app.state.set_paused(value)

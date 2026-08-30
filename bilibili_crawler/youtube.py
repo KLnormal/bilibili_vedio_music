@@ -119,12 +119,14 @@ CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL D
 
 
 class YouTubeService:
-    def __init__(self, db_path: str | Path, save_root: str | Path, *, ffmpeg_path: str = "", min_duration: int = 0, max_duration: int = 0):
+    def __init__(self, db_path: str | Path, save_root: str | Path, *, ffmpeg_path: str = "", cookie_file: str = "", cookies_from_browser: str = "", min_duration: int = 0, max_duration: int = 0):
         self.db_path = Path(db_path).resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.save_root = normalize_download_root(save_root) / "YouTube"
         ensure_writable_root(self.save_root)
         self.ffmpeg_path = ffmpeg_path
+        self.cookie_file = cookie_file
+        self.cookies_from_browser = cookies_from_browser
         self.min_duration = min_duration
         self.max_duration = max_duration
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
@@ -147,6 +149,38 @@ class YouTubeService:
             raise RuntimeError("YouTube 功能需要 yt-dlp，请先执行 pip install yt-dlp") from exc
         return yt_dlp
 
+    def _auth_options(self) -> dict[str, Any]:
+        """Return yt-dlp authentication options configured by the user."""
+        options: dict[str, Any] = {}
+        browser = self.cookies_from_browser.strip().lower()
+        if browser:
+            if browser not in {"chrome", "edge", "firefox", "brave", "opera", "chromium", "vivaldi"}:
+                raise ValueError("YouTube 浏览器 Cookie 仅支持 Chrome、Edge、Firefox、Brave、Opera、Chromium 或 Vivaldi")
+            options["cookiesfrombrowser"] = (browser,)
+        else:
+            cookie_file = str(self.cookie_file or "").strip()
+            if not cookie_file:
+                return options
+            path = Path(cookie_file).expanduser().resolve(strict=False)
+            if not path.is_file():
+                raise RuntimeError(f"YouTube Cookie 文件不存在：{path}")
+            options["cookiefile"] = str(path)
+        return options
+
+    def check_authentication(self) -> dict[str, Any]:
+        """Probe a signed-in YouTube page using the configured Cookie source."""
+        auth = self._auth_options()
+        if not auth:
+            raise RuntimeError("尚未配置 YouTube Cookie 文件或浏览器 Cookie 来源")
+        options: dict[str, Any] = {"quiet": True, "skip_download": True, "extract_flat": True}
+        options.update(auth)
+        info = self._ydl().YoutubeDL(options).extract_info(
+            "https://www.youtube.com/feed/library", download=False
+        )
+        if not info:
+            raise RuntimeError("YouTube 登录态无效或账号无法访问订阅内容")
+        return {"authenticated": True, "title": info.get("title") or "YouTube", "source": next(iter(auth))}
+
     @staticmethod
     def _channel_url(identifier: str) -> str:
         return (f"https://www.youtube.com/channel/{identifier}/videos" if identifier.startswith("UC")
@@ -156,7 +190,9 @@ class YouTubeService:
         kind, value = identify_channel(identifier)
         if kind != "youtube":
             raise ValueError("该标识是 Bilibili UID，不属于 YouTube")
-        info = self._ydl().YoutubeDL({"quiet": True, "skip_download": True, "extract_flat": True}).extract_info(self._channel_url(value), download=False)
+        ydl_options = {"quiet": True, "skip_download": True, "extract_flat": True}
+        ydl_options.update(self._auth_options())
+        info = self._ydl().YoutubeDL(ydl_options).extract_info(self._channel_url(value), download=False)
         channel_id = str(info.get("channel_id") or info.get("uploader_id") or value)
         channel = YouTubeChannel(channel_id, info.get("channel") or info.get("uploader") or value,
                                  info.get("description") or "", info.get("channel_url") or self._channel_url(value))
@@ -214,6 +250,7 @@ class YouTubeService:
         """Scan a single already-resolved channel and persist its entries."""
         channel_id = channel.channel_id
         ydl_opts = {"quiet": True, "skip_download": True, "extract_flat": True, "ignoreerrors": True}
+        ydl_opts.update(self._auth_options())
         # ``channel_url`` returned by yt-dlp often points at the channel home
         # page, whose three navigation tabs are not video entries.  Always
         # target the dedicated videos tab so a scan cannot report success with
@@ -302,6 +339,10 @@ class YouTubeService:
         return {"stats": dict(Counter(d for _, d, _ in result)), "decisions": result}
 
     def download(self, channel_id: Optional[str] = None, media_type: str = "video", *, quality: Optional[str] = None, options=None, stop_event: Optional[threading.Event] = None) -> dict:
+        if options is not None:
+            options.validate()
+            media_type = options.media_type
+            quality = quality or options.quality
         rows = self.preview(channel_id, media_type, options)["decisions"]; done = failed = 0
         for video, decision, reason in rows:
             if decision != "READY": continue
@@ -309,9 +350,13 @@ class YouTubeService:
             channel = next((c for c in self.list_channels() if c.channel_id == video.channel_id), None)
             folder = self.save_root / sanitize_filename(channel.name if channel else video.channel_id, 60); folder.mkdir(parents=True, exist_ok=True)
             height = {"720p": 720, "1080p": 1080, "1080p+": 1080, "1080p60": 1080, "4k": 2160}.get((quality or "").lower())
-            fmt = (f"bestvideo[height<={height}]+bestaudio/best[height<={height}]" if height and media_type == "video" else "bestvideo+bestaudio/best" if media_type == "video" else "bestaudio[ext=m4a]/bestaudio")
+            # An explicit quality must not silently become a lower resolution:
+            # if YouTube only exposes 720p for an anonymous session, surface a
+            # clear failure so the user can configure Cookie authentication.
+            fmt = (f"bestvideo[height={height}]+bestaudio/best[height={height}]" if height and media_type == "video" else "bestvideo+bestaudio/best" if media_type == "video" else "bestaudio[ext=m4a]/bestaudio")
             out = str(folder / f"%(title)s [{video.video_id}].%(ext)s")
             opts = {"quiet": True, "no_warnings": True, "format": fmt, "outtmpl": out, "noplaylist": True, "merge_output_format": "mp4" if media_type == "video" else "m4a", "ffmpeg_location": self.ffmpeg_path or None}
+            opts.update(self._auth_options())
             def _progress_hook(_status):
                 if stop_event and stop_event.is_set():
                     raise RuntimeError("下载已停止")
