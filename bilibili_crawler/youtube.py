@@ -175,7 +175,18 @@ class YouTubeService:
         with self._lock:
             cur = self.db.execute("DELETE FROM channel WHERE channel_id=?", (channel_id,)); self.db.commit(); return cur.rowcount > 0
 
+    def resolve_channel_id(self, identifier: Optional[str]) -> Optional[str]:
+        if not identifier:
+            return None
+        with self._lock:
+            if self.db.execute("SELECT 1 FROM channel WHERE channel_id=?", (identifier,)).fetchone():
+                return identifier
+        # Handles and channel URLs are aliases; resolve them once through
+        # yt-dlp, then use the canonical UC... id for all database queries.
+        return self.add_channel(identifier).channel_id
+
     def scan(self, channel_id: str) -> dict[str, int]:
+        channel_id = self.resolve_channel_id(channel_id) or channel_id
         channel = next((c for c in self.list_channels() if c.channel_id == channel_id), None)
         if not channel:
             raise ValueError(f"YouTube 频道不存在：{channel_id}")
@@ -212,6 +223,7 @@ class YouTubeService:
         return self.db.execute(query + " ORDER BY COALESCE(v.created,0) DESC", args).fetchall()
 
     def list_videos(self, channel_id: Optional[str] = None, media_type: str = "video") -> list[YouTubeVideo]:
+        channel_id = self.resolve_channel_id(channel_id)
         with self._lock:
             return [YouTubeVideo(r["video_id"], r["channel_id"], r["title"], r["description"], r["duration"], r["created"], r["url"], media_type, r["status"], r["download_path"], r["error"], r["filter_reason"]) for r in self._rows(channel_id, media_type)]
 
