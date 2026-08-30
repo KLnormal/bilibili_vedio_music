@@ -374,6 +374,10 @@ class YouTubeService:
             args.append(channel_id)
         self.db.execute(f"UPDATE media SET status='PENDING',error='' WHERE {where} AND status='DOWNLOADING'", args)
         self.db.commit()
+        # Reconcile previously downloaded rows before building the queue.  A
+        # file may have been moved/deleted outside the app; keeping its stale
+        # DOWNLOADED state would make the UI report success while skipping it.
+        self.check_files(channel_id, media_type)
 
         rows = self.preview(channel_id, media_type, options)["decisions"]; done = failed = 0
         ready_total = sum(decision == "READY" for _, decision, _ in rows)

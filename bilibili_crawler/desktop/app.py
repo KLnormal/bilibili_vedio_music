@@ -1216,6 +1216,11 @@ class MainWindow(QMainWindow):
 
     def refresh_runtime(self):
         self.overview.refresh_runtime(); self.tasks.refresh_runtime()
+        # Downloaded rows are updated one video at a time.  Refresh this
+        # read-only page while a download is active so completed files appear
+        # immediately instead of only after the whole queue finishes.
+        if self.controller.is_running("download"):
+            self.downloaded.refresh()
 
     def task_finished(self, name, result):
         self.statusBar().showMessage(f"任务完成：{name}", 5000)
