@@ -90,6 +90,8 @@ python main.py desktop
 独立的 `youtube.db`；已下载文件位于 `downloads\YouTube`，不会混入 Bilibili 记录。
 “UP 管理”页的下载按钮使用设置页中的默认清晰度和媒体类型；“任务与视频”页仍可为
 单次任务覆盖。音频任务始终生成 `.m4a`，1080P 只对视频任务有意义。
+YouTube 下载过程中任务页会显示当前视频和实时进度；网络失败会在有限次数后标记失败，
+不会无限停留在“正在准备队列”。
 
 ## Windows EXE
 

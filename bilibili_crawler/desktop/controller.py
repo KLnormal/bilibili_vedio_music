@@ -281,7 +281,24 @@ class DesktopController(QObject):
 
     def start_download(self, mid: Optional[int], options: DownloadOptions) -> bool:
         if self.source == "youtube":
-            return self._start("download", lambda cancel, worker: self.app.youtube().download(str(mid) if mid else None, options.media_type, quality=options.quality, options=options, stop_event=cancel), mid)
+            def work(cancel: threading.Event, worker: TaskWorker):
+                def on_progress(payload: dict) -> None:
+                    self.app.state.set_progress(**payload)
+                    worker.progress.emit(payload)
+
+                try:
+                    return self.app.youtube().download(
+                        str(mid) if mid else None,
+                        options.media_type,
+                        quality=options.quality,
+                        options=options,
+                        stop_event=cancel,
+                        progress_callback=on_progress,
+                    )
+                finally:
+                    self.app.state.clear_progress()
+
+            return self._start("download", work, mid)
         def work(cancel: threading.Event, worker: TaskWorker):
             prepared = self.app.prepare_download(mid, options)
             self.app.download_manager.set_options(options)

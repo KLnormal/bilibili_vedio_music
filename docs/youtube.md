@@ -21,6 +21,10 @@ Windows 上读取 Chromium 浏览器 Cookie 需要复制浏览器的 Cookies SQL
 Edge/Chrome 可能使用 v20 App-Bound Encryption；当前 yt-dlp 无法直接解密此类 Cookie，
 此时必须导出 Netscape Cookie 文件。
 
+桌面下载会显示当前视频和 yt-dlp 的实时字节进度，并对网络请求设置有限超时与重试次数。
+如果程序在下载中异常退出，下一次开始下载会自动把遗留的 `DOWNLOADING` 记录恢复为
+`PENDING`，避免队列永久卡住。
+
 桌面端通过 `DesktopController.start_scan()` 调用同一服务。任务页的“全部 UP”
 值为 `None`，服务层会将其解释为全部启用的 YouTube 频道，而不是字符串频道名。
 

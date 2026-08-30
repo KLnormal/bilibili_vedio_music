@@ -12,7 +12,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from urllib.parse import urlparse
 
 from .download_directory import ensure_writable_root, normalize_download_root
@@ -359,15 +359,39 @@ class YouTubeService:
         from collections import Counter
         return {"stats": dict(Counter(d for _, d, _ in result)), "decisions": result}
 
-    def download(self, channel_id: Optional[str] = None, media_type: str = "video", *, quality: Optional[str] = None, options=None, stop_event: Optional[threading.Event] = None) -> dict:
+    def download(self, channel_id: Optional[str] = None, media_type: str = "video", *, quality: Optional[str] = None, options=None, stop_event: Optional[threading.Event] = None, progress_callback: Optional[Callable[[dict[str, Any]], None]] = None) -> dict:
         if options is not None:
             options.validate()
             media_type = options.media_type
             quality = quality or options.quality
+        # A process terminated during yt-dlp leaves its row as DOWNLOADING.
+        # There is no active YouTube worker after a process restart, so make
+        # those orphaned rows retryable instead of silently skipping them.
+        where = "media_type=?"
+        args: list[Any] = [media_type]
+        if channel_id:
+            where += " AND video_id IN (SELECT video_id FROM video WHERE channel_id=?)"
+            args.append(channel_id)
+        self.db.execute(f"UPDATE media SET status='PENDING',error='' WHERE {where} AND status='DOWNLOADING'", args)
+        self.db.commit()
+
         rows = self.preview(channel_id, media_type, options)["decisions"]; done = failed = 0
+        ready_total = sum(decision == "READY" for _, decision, _ in rows)
+        ready_index = 0
+
+        def emit_progress(payload: dict[str, Any]) -> None:
+            if progress_callback:
+                try:
+                    progress_callback(payload)
+                except Exception:
+                    # Progress reporting must never turn a successful media
+                    # download into a failed task.
+                    pass
+
         for video, decision, reason in rows:
             if decision != "READY": continue
             if stop_event and stop_event.is_set(): break
+            ready_index += 1
             channel = next((c for c in self.list_channels() if c.channel_id == video.channel_id), None)
             folder = self.save_root / sanitize_filename(channel.name if channel else video.channel_id, 60); folder.mkdir(parents=True, exist_ok=True)
             height = {"720p": 720, "1080p": 1080, "1080p+": 1080, "1080p60": 1080, "4k": 2160}.get((quality or "").lower())
@@ -376,11 +400,22 @@ class YouTubeService:
             # clear failure so the user can configure Cookie authentication.
             fmt = (f"bestvideo[height={height}]+bestaudio/best[height={height}]" if height and media_type == "video" else "bestvideo+bestaudio/best" if media_type == "video" else "bestaudio[ext=m4a]/bestaudio")
             out = str(folder / f"%(title)s [{video.video_id}].%(ext)s")
-            opts = {"quiet": True, "no_warnings": True, "format": fmt, "outtmpl": out, "noplaylist": True, "merge_output_format": "mp4" if media_type == "video" else "m4a", "ffmpeg_location": self.ffmpeg_path or None}
+            opts = {"quiet": True, "no_warnings": True, "format": fmt, "outtmpl": out, "noplaylist": True, "merge_output_format": "mp4" if media_type == "video" else "m4a", "ffmpeg_location": self.ffmpeg_path or None,
+                    "socket_timeout": 30, "retries": 2, "fragment_retries": 2, "extractor_retries": 2}
             opts.update(self._auth_options())
-            def _progress_hook(_status):
+            emit_progress({"bvid": video.video_id, "title": f"[{ready_index}/{ready_total}] {video.title}", "downloaded": 0, "total": -1, "speed": "", "status": "starting"})
+
+            def _progress_hook(status):
                 if stop_event and stop_event.is_set():
                     raise RuntimeError("下载已停止")
+                state = status.get("status")
+                if state not in {"downloading", "finished"}:
+                    return
+                downloaded = int(status.get("downloaded_bytes") or 0)
+                total = int(status.get("total_bytes") or status.get("total_bytes_estimate") or -1)
+                speed_value = status.get("speed")
+                speed = f"{speed_value / 1024 / 1024:.2f} MB/s" if speed_value else ""
+                emit_progress({"bvid": video.video_id, "title": f"[{ready_index}/{ready_total}] {video.title}", "downloaded": downloaded, "total": total, "speed": speed, "status": state})
             opts["progress_hooks"] = [_progress_hook]
             try:
                 self.db.execute("UPDATE media SET status='DOWNLOADING',error='' WHERE video_id=? AND media_type=?", (video.video_id, media_type)); self.db.commit()

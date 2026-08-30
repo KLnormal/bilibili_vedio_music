@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from bilibili_crawler.options import DownloadOptions
 from bilibili_crawler.youtube import YouTubeService, identify_channel
 
 
@@ -81,6 +82,38 @@ class YouTubeDatabaseTests(unittest.TestCase):
             service.db.commit()
             self.assertEqual(service.status("UCdemo", "video")["counts"]["DOWNLOADED"], 1)
             self.assertEqual(service.status("UCdemo", "audio")["counts"]["PENDING"], 1)
+            service.close()
+
+    def test_download_reports_progress_and_recovers_orphaned_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = YouTubeService(root / "youtube.db", root / "downloads")
+            service.db.execute("INSERT INTO channel(channel_id,name,url) VALUES('UCdemo','Demo','https://example.invalid')")
+            service.db.execute("INSERT INTO video(video_id,channel_id,title,duration,url) VALUES('abcdefghijk','UCdemo','hello',120,'https://youtu.be/abcdefghijk')")
+            service.db.execute("INSERT INTO media(video_id,media_type,status) VALUES('abcdefghijk','audio','DOWNLOADING')")
+            service.db.commit()
+            captured = []
+
+            class FakeYoutubeDL:
+                def __init__(self, options):
+                    self.options = options
+
+                def download(self, _urls):
+                    self.options["progress_hooks"][0]({"status": "downloading", "downloaded_bytes": 5, "total_bytes": 10, "speed": 1024 * 1024})
+                    out = self.options["outtmpl"].replace("%(title)s", "hello").replace("%(ext)s", "m4a")
+                    Path(out).write_bytes(b"audio")
+                    self.options["progress_hooks"][0]({"status": "finished", "downloaded_bytes": 10, "total_bytes": 10})
+
+            fake_yt_dlp = mock.Mock(YoutubeDL=FakeYoutubeDL)
+            with mock.patch.object(service, "_ydl", return_value=fake_yt_dlp):
+                result = service.download(
+                    "UCdemo", options=DownloadOptions(media_type="audio", quality="1080p"),
+                    progress_callback=captured.append,
+                )
+            self.assertEqual(result, {"downloaded": 1, "failed": 0})
+            self.assertEqual(service.status("UCdemo", "audio")["counts"]["DOWNLOADED"], 1)
+            self.assertEqual(captured[0]["status"], "starting")
+            self.assertEqual(captured[-1]["downloaded"], 10)
             service.close()
 
     def test_scan_without_channel_scans_enabled_channels(self):
