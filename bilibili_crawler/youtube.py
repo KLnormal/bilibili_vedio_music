@@ -174,9 +174,22 @@ class YouTubeService:
             raise RuntimeError("尚未配置 YouTube Cookie 文件或浏览器 Cookie 来源")
         options: dict[str, Any] = {"quiet": True, "skip_download": True, "extract_flat": True}
         options.update(auth)
-        info = self._ydl().YoutubeDL(options).extract_info(
-            "https://www.youtube.com/feed/library", download=False
-        )
+        try:
+            info = self._ydl().YoutubeDL(options).extract_info(
+                "https://www.youtube.com/feed/library", download=False
+            )
+        except Exception as exc:
+            # yt-dlp currently uses the historical “Chrome” wording for every
+            # Chromium browser.  On Windows this normally means the browser's
+            # Cookies SQLite file is locked by a running browser process.
+            if "Could not copy Chrome cookie database" in str(exc):
+                browser = self.cookies_from_browser.strip().lower()
+                label = browser.title() if browser else "浏览器"
+                raise RuntimeError(
+                    f"无法读取 {label} Cookie 数据库：请完全退出 {label}（包括后台进程）后重试；"
+                    "也可以导出 Netscape Cookie 文件并填写“YouTube Cookie 文件”。"
+                ) from exc
+            raise
         if not info:
             raise RuntimeError("YouTube 登录态无效或账号无法访问订阅内容")
         return {"authenticated": True, "title": info.get("title") or "YouTube", "source": next(iter(auth))}

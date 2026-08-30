@@ -37,6 +37,22 @@ class YouTubeDatabaseTests(unittest.TestCase):
                 service._auth_options()
             service.close()
 
+    def test_browser_cookie_lock_error_is_actionable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = YouTubeService(Path(tmp) / "youtube.db", Path(tmp) / "downloads", cookies_from_browser="edge")
+
+            class FailingYoutubeDL:
+                def __init__(self, _options):
+                    pass
+
+                def extract_info(self, _url, download=False):
+                    raise RuntimeError("ERROR: Could not copy Chrome cookie database. See https://github.com/yt-dlp/yt-dlp/issues/7271")
+
+            with mock.patch.object(service, "_ydl", return_value=mock.Mock(YoutubeDL=FailingYoutubeDL)):
+                with self.assertRaisesRegex(RuntimeError, "无法读取 Edge Cookie 数据库.*完全退出 Edge"):
+                    service.check_authentication()
+            service.close()
+
     def test_database_and_media_state_are_isolated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

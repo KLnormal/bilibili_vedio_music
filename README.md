@@ -34,6 +34,8 @@ YouTube 使用 yt-dlp 登录态。桌面端“设置”页可选择从 Chrome、
 读取 Cookie，或填写 Netscape Cookie 文件路径，然后点击“检查 YouTube 登录态”。配置
 项为 `youtube.cookie_file` 和 `youtube.cookies_from_browser`；两者同时填写时优先使用
 浏览器来源。指定视频清晰度无法获得时会明确失败，不再静默降级到 720P。
+读取 Edge/Chrome Cookie 时请先完全退出浏览器（包括后台进程）；浏览器锁定 Cookies
+数据库时，程序会提示改用 Netscape Cookie 文件。
 
 默认配置文件为项目根目录的 `config.yaml`。使用个人配置时可通过
 `--config D:\path\config.yaml` 指定。请勿将 Cookie、数据库或下载目录提交到 Git。
