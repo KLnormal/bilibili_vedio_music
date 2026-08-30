@@ -31,6 +31,14 @@ class YouTubeDatabaseTests(unittest.TestCase):
             self.assertNotIn("cookiefile", options)
             service.close()
 
+    def test_javascript_options_enable_ejs_solver(self):
+        options = YouTubeService._javascript_options()
+        self.assertIn("ejs:github", options["remote_components"])
+        # The CI/desktop environment may not have Node installed, but when it
+        # is available yt-dlp must receive an explicit runtime path.
+        if options.get("js_runtimes"):
+            self.assertIn("path", options["js_runtimes"]["node"])
+
     def test_missing_cookie_file_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
             service = YouTubeService(Path(tmp) / "youtube.db", Path(tmp) / "downloads", cookie_file=str(Path(tmp) / "missing.txt"))

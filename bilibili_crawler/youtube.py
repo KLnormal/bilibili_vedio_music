@@ -7,6 +7,7 @@ mirror the subset used by the CLI and desktop controller.
 from __future__ import annotations
 
 import re
+import shutil
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -167,12 +168,30 @@ class YouTubeService:
             options["cookiefile"] = str(path)
         return options
 
+    @staticmethod
+    def _javascript_options() -> dict[str, Any]:
+        """Enable yt-dlp's JavaScript challenge solver when available.
+
+        Recent YouTube clients require EJS signature/n-challenge solving.  If
+        no JS runtime is explicitly configured yt-dlp silently drops the
+        signed formats and eventually reports ``The page needs to be
+        reloaded``.  Node is already a supported optional runtime on Windows;
+        pass its resolved executable path so the desktop EXE does not depend
+        on the process working directory or a shell-specific PATH.
+        """
+        node = shutil.which("node")
+        options: dict[str, Any] = {"remote_components": {"ejs:github"}}
+        if node:
+            options["js_runtimes"] = {"node": {"path": node}}
+        return options
+
     def check_authentication(self) -> dict[str, Any]:
         """Probe a signed-in YouTube page using the configured Cookie source."""
         auth = self._auth_options()
         if not auth:
             raise RuntimeError("尚未配置 YouTube Cookie 文件或浏览器 Cookie 来源")
         options: dict[str, Any] = {"quiet": True, "skip_download": True, "extract_flat": True}
+        options.update(self._javascript_options())
         options.update(auth)
         try:
             info = self._ydl().YoutubeDL(options).extract_info(
@@ -212,6 +231,7 @@ class YouTubeService:
         if kind != "youtube":
             raise ValueError("该标识是 Bilibili UID，不属于 YouTube")
         ydl_options = {"quiet": True, "skip_download": True, "extract_flat": True}
+        ydl_options.update(self._javascript_options())
         ydl_options.update(self._auth_options())
         info = self._ydl().YoutubeDL(ydl_options).extract_info(self._channel_url(value), download=False)
         channel_id = str(info.get("channel_id") or info.get("uploader_id") or value)
@@ -271,6 +291,7 @@ class YouTubeService:
         """Scan a single already-resolved channel and persist its entries."""
         channel_id = channel.channel_id
         ydl_opts = {"quiet": True, "skip_download": True, "extract_flat": True, "ignoreerrors": True}
+        ydl_opts.update(self._javascript_options())
         ydl_opts.update(self._auth_options())
         # ``channel_url`` returned by yt-dlp often points at the channel home
         # page, whose three navigation tabs are not video entries.  Always
@@ -406,6 +427,7 @@ class YouTubeService:
             out = str(folder / f"%(title)s [{video.video_id}].%(ext)s")
             opts = {"quiet": True, "no_warnings": True, "format": fmt, "outtmpl": out, "noplaylist": True, "merge_output_format": "mp4" if media_type == "video" else "m4a", "ffmpeg_location": self.ffmpeg_path or None,
                     "socket_timeout": 30, "retries": 2, "fragment_retries": 2, "extractor_retries": 2}
+            opts.update(self._javascript_options())
             opts.update(self._auth_options())
             emit_progress({"bvid": video.video_id, "title": f"[{ready_index}/{ready_total}] {video.title}", "downloaded": 0, "total": -1, "speed": "", "status": "starting"})
 

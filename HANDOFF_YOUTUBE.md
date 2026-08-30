@@ -32,6 +32,7 @@
 - 新版 Edge/Chrome 的 v20 App-Bound Encryption 目前无法由稳定版 yt-dlp 解密，需导出 Netscape Cookie 文件。
 - YouTube 桌面下载已接入 yt-dlp 实时进度、有限网络重试和异常退出后的 `DOWNLOADING` 队列恢复。
 - 下载前会自动核对已下载文件是否仍存在，缺失文件会重新加入队列；“已下载”页面会在任务运行期间刷新。
+- yt-dlp 请求会自动检测系统 Node.js 并启用 EJS challenge solver，解决新版 YouTube 返回“页面需要重新加载”导致无格式可下载的问题。
 
 ### YouTube 独立数据库
 
