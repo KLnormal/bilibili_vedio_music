@@ -53,6 +53,22 @@ class YouTubeDatabaseTests(unittest.TestCase):
                     service.check_authentication()
             service.close()
 
+    def test_browser_dpapi_error_recommends_netscape_cookie(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = YouTubeService(Path(tmp) / "youtube.db", Path(tmp) / "downloads", cookies_from_browser="edge")
+
+            class FailingYoutubeDL:
+                def __init__(self, _options):
+                    pass
+
+                def extract_info(self, _url, download=False):
+                    raise RuntimeError("ERROR: Failed to decrypt with DPAPI. See https://github.com/yt-dlp/yt-dlp/issues/10927")
+
+            with mock.patch.object(service, "_ydl", return_value=mock.Mock(YoutubeDL=FailingYoutubeDL)):
+                with self.assertRaisesRegex(RuntimeError, "无法解密 Edge Cookie.*v20.*Netscape Cookie"):
+                    service.check_authentication()
+            service.close()
+
     def test_database_and_media_state_are_isolated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

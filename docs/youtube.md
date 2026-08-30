@@ -17,7 +17,9 @@
 Windows 上读取 Chromium 浏览器 Cookie 需要复制浏览器的 Cookies SQLite 数据库。
 如果浏览器仍在后台运行，yt-dlp 可能无法复制数据库；请完全退出 Edge/Chrome（包括
 后台进程）后重试，或改用导出的 Netscape Cookie 文件。程序会把 yt-dlp 通用的
-“Could not copy Chrome cookie database”错误转换为对应浏览器的操作提示。
+“Could not copy Chrome cookie database”错误转换为对应浏览器的操作提示。较新的
+Edge/Chrome 可能使用 v20 App-Bound Encryption；当前 yt-dlp 无法直接解密此类 Cookie，
+此时必须导出 Netscape Cookie 文件。
 
 桌面端通过 `DesktopController.start_scan()` 调用同一服务。任务页的“全部 UP”
 值为 `None`，服务层会将其解释为全部启用的 YouTube 频道，而不是字符串频道名。

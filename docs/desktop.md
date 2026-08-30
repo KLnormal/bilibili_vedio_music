@@ -35,7 +35,8 @@ Windows 上建议使用项目目录内的虚拟环境。直接安装到 Python S
 - YouTube 登录：设置页可选择浏览器 Cookie 或 Netscape Cookie 文件，并通过“检查
   YouTube 登录态”在后台验证；切换到 YouTube 后左侧显示“配置 YouTube 登录”快捷入口。
   读取浏览器 Cookie 失败时请完全退出对应浏览器（包括后台进程），因为 Chromium 的
-  Cookies 数据库通常会被运行中的浏览器锁定；也可改用 Netscape Cookie 文件。
+  Cookies 数据库通常会被运行中的浏览器锁定；若提示 DPAPI/v20 App-Bound Encryption，
+  当前 yt-dlp 无法直接解密该浏览器 Cookie，请改用 Netscape Cookie 文件。
 - UP 规则：在“UP 管理 → 规则设置”中为每个 UP 单独配置默认时长和发布时间；
   在“UP 管理 → 黑名单”中单独维护标题关键词。未填写的时长/日期继承全局默认值。
 - 本次下载：在“任务与视频”页展开本次下载筛选，可临时覆盖时长和发布时间，

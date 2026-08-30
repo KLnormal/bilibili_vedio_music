@@ -189,6 +189,14 @@ class YouTubeService:
                     f"无法读取 {label} Cookie 数据库：请完全退出 {label}（包括后台进程）后重试；"
                     "也可以导出 Netscape Cookie 文件并填写“YouTube Cookie 文件”。"
                 ) from exc
+            if "Failed to decrypt with DPAPI" in str(exc):
+                browser = self.cookies_from_browser.strip().lower()
+                label = browser.title() if browser else "浏览器"
+                raise RuntimeError(
+                    f"无法解密 {label} Cookie（Windows DPAPI/App-Bound Encryption）。"
+                    f"当前 {label} 可能使用 v20 加密，当前 yt-dlp 无法直接读取；"
+                    "请导出 Netscape Cookie 文件并填写“YouTube Cookie 文件”。"
+                ) from exc
             raise
         if not info:
             raise RuntimeError("YouTube 登录态无效或账号无法访问订阅内容")

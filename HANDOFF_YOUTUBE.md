@@ -29,6 +29,7 @@
 - YouTube 视频指定清晰度时使用精确高度匹配，无法提供目标清晰度会失败并提示，避免静默降级。
 - 设置页支持 Netscape Cookie 文件或 Chrome/Edge/Firefox 等浏览器 Cookie，并可后台检查登录态；音频任务固定输出 `.m4a`。
 - Windows Chromium 浏览器 Cookie 数据库被占用时会显示对应浏览器的明确提示，建议完全退出浏览器后重试或改用 Netscape Cookie 文件。
+- 新版 Edge/Chrome 的 v20 App-Bound Encryption 目前无法由稳定版 yt-dlp 解密，需导出 Netscape Cookie 文件。
 
 ### YouTube 独立数据库
 
