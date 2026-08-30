@@ -265,6 +265,8 @@ class YouTubeService:
             if max_d is None: max_d = self.max_duration
             if min_d and (v.duration is None or v.duration < min_d): reason = "duration_out_of_range"
             elif max_d and (v.duration is None or v.duration > max_d): reason = "duration_out_of_range"
+            elif options and getattr(options, "min_datetime", None) and (v.created is None or datetime.fromtimestamp(v.created) < options.min_datetime): reason = "date_out_of_range"
+            elif options and getattr(options, "max_datetime", None) and (v.created is None or datetime.fromtimestamp(v.created) > options.max_datetime): reason = "date_out_of_range"
             elif allow and not any(k.casefold() in v.title.casefold() for k in allow): reason = "allowlist_miss"
             elif any(k.casefold() in v.title.casefold() for k in black): reason = "blacklist"
             decision = "DOWNLOADED" if v.status == "DOWNLOADED" else ("FILTERED" if reason else "READY")
