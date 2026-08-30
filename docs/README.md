@@ -6,6 +6,7 @@
 - [Bilibili 接口模块](bilibili.md)
 - [扫描模块](crawler.md)
 - [下载模块](downloader.md)
+- [YouTube 模块](youtube.md)
 - [Windows EXE 打包](packaging.md)
 
 现有 CLI/TUI 与核心模块的行为说明仍以根目录 `README.md`、`Agent.md` 和

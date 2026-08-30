@@ -254,6 +254,26 @@ class DesktopControlsTest(unittest.TestCase):
         self.assertEqual(self.window.tasks.scan_progress.value(), 100)
         self.assertIn("扫描完成", self.window.tasks.scan_status.text())
 
+    def test_youtube_all_channel_scan_preserves_empty_selection(self):
+        """The desktop '全部 UP' choice must reach the service as None."""
+        controller = self.window.controller
+        controller.set_source("youtube")
+        captured = {}
+
+        def fake_start(name, fn, mid=None):
+            captured["name"] = name
+            captured["mid"] = mid
+            captured["result"] = fn(None, None)
+            return True
+
+        with mock.patch.object(controller, "_start", side_effect=fake_start), \
+             mock.patch.object(controller.app, "youtube") as youtube_factory:
+            youtube_factory.return_value.scan.return_value = {"new": 0, "existing": 0}
+            self.assertTrue(controller.start_scan(None))
+        self.assertEqual(captured["name"], "scan")
+        self.assertIsNone(captured["mid"])
+        youtube_factory.return_value.scan.assert_called_once_with(None)
+
     def test_desktop_download_runs_end_to_end_without_network(self):
         video = Video(bvid="BVdownload", mid=1, title="测试下载", duration=600)
         self.app.repo.insert_video(video)

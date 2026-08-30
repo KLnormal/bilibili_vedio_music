@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from bilibili_crawler.youtube import YouTubeService, identify_channel
 
@@ -29,3 +30,33 @@ class YouTubeDatabaseTests(unittest.TestCase):
             self.assertEqual(service.status("UCdemo", "audio")["counts"]["PENDING"], 1)
             service.close()
 
+    def test_scan_without_channel_scans_enabled_channels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = YouTubeService(root / "youtube.db", root / "downloads")
+            service.db.executemany(
+                "INSERT INTO channel(channel_id,name,url,enabled) VALUES(?,?,?,?)",
+                [
+                    ("UCenabled", "Enabled", "https://example.invalid/enabled", 1),
+                    ("UCdisabled", "Disabled", "https://example.invalid/disabled", 0),
+                ],
+            )
+            service.db.commit()
+
+            class FakeYoutubeDL:
+                urls = []
+
+                def __init__(self, options):
+                    self.options = options
+
+                def extract_info(self, url, download=False):
+                    self.urls.append(url)
+                    return {"entries": [{"id": "abcdefghijk", "title": "hello", "duration": 120}]}
+
+            fake_yt_dlp = mock.Mock(YoutubeDL=FakeYoutubeDL)
+            with mock.patch.object(service, "_ydl", return_value=fake_yt_dlp):
+                result = service.scan()
+            self.assertEqual(result, {"new": 1, "existing": 0})
+            self.assertEqual(service.db.execute("SELECT channel_id FROM video").fetchone()[0], "UCenabled")
+            self.assertEqual(FakeYoutubeDL.urls, ["https://www.youtube.com/channel/UCenabled/videos"])
+            service.close()

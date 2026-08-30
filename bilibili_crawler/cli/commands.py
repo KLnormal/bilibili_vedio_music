@@ -419,7 +419,6 @@ def main(argv: Optional[list] = None) -> int:
                 yt = _youtube_service(app)
                 try:
                     channel = _youtube_channel_arg(args)
-                    if not channel: raise ValueError("YouTube 扫描需要 --channel")
                     result = yt.scan(channel); print(f"YouTube scan: new={result['new']} existing={result['existing']}"); return 0
                 finally: yt.close()
             return _cmd_scan(app, args.mid)

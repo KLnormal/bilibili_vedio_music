@@ -185,13 +185,40 @@ class YouTubeService:
         # yt-dlp, then use the canonical UC... id for all database queries.
         return self.add_channel(identifier).channel_id
 
-    def scan(self, channel_id: str) -> dict[str, int]:
-        channel_id = self.resolve_channel_id(channel_id) or channel_id
-        channel = next((c for c in self.list_channels() if c.channel_id == channel_id), None)
-        if not channel:
-            raise ValueError(f"YouTube 频道不存在：{channel_id}")
+    def scan(self, channel_id: Optional[str] = None) -> dict[str, int]:
+        """Scan one channel, or all enabled channels when *channel_id* is empty.
+
+        The desktop task page uses ``None`` for its "全部 UP" selection, just
+        like the Bilibili scanner.  Keeping that meaning here prevents the
+        controller from accidentally treating ``None`` as the literal channel
+        name ``"None"`` and also makes the CLI and desktop behaviour match.
+        """
+        if channel_id:
+            channel_id = self.resolve_channel_id(channel_id) or channel_id
+            channels = [c for c in self.list_channels() if c.channel_id == channel_id]
+        else:
+            channels = [c for c in self.list_channels() if c.enabled]
+        if not channels:
+            if channel_id:
+                raise ValueError(f"YouTube 频道不存在：{channel_id}")
+            raise ValueError("没有启用的 YouTube 频道")
+
+        total_new = total_existing = 0
+        for channel in channels:
+            result = self._scan_channel(channel)
+            total_new += result["new"]
+            total_existing += result["existing"]
+        return {"new": total_new, "existing": total_existing}
+
+    def _scan_channel(self, channel: YouTubeChannel) -> dict[str, int]:
+        """Scan a single already-resolved channel and persist its entries."""
+        channel_id = channel.channel_id
         ydl_opts = {"quiet": True, "skip_download": True, "extract_flat": True, "ignoreerrors": True}
-        info = self._ydl().YoutubeDL(ydl_opts).extract_info(channel.url or self._channel_url(channel_id), download=False)
+        # ``channel_url`` returned by yt-dlp often points at the channel home
+        # page, whose three navigation tabs are not video entries.  Always
+        # target the dedicated videos tab so a scan cannot report success with
+        # only those non-video items.
+        info = self._ydl().YoutubeDL(ydl_opts).extract_info(self._channel_url(channel_id), download=False)
         entries = info.get("entries") or []
         new = 0
         with self._lock:

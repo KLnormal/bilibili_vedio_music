@@ -247,7 +247,11 @@ class DesktopController(QObject):
 
     def start_scan(self, mid: Optional[int] = None) -> bool:
         if self.source == "youtube":
-            return self._start("scan", lambda cancel, worker: self.app.youtube().scan(str(mid)), mid)
+            # ``None`` is the Tasks page's "全部 UP" selection.  Preserve it
+            # so the YouTube service can scan every enabled channel instead
+            # of trying to resolve the literal string "None".
+            channel = str(mid) if mid else None
+            return self._start("scan", lambda cancel, worker: self.app.youtube().scan(channel), mid)
         return self._start("scan", lambda cancel, worker: self.app.scan(mid), mid)
 
     def start_check(self, mid: Optional[int] = None, media_type: str = "video") -> bool:
