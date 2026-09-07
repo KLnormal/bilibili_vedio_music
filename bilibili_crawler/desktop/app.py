@@ -1014,7 +1014,7 @@ class SettingsPage(QWidget):
         value = cfg
         for part in path.split("."):
             value = value.get(part, {}) if isinstance(value, dict) else default
-        return default if isinstance(value, dict) else value
+        return default if value is None or isinstance(value, dict) else value
 
     def load(self):
         cfg = self.controller.settings()

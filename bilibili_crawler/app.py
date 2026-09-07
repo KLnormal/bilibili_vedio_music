@@ -161,8 +161,8 @@ class App:
             db_path = Path(configured).expanduser().resolve() if configured else resolve_data_path(self.config).with_name("youtube.db")
             yt_cfg = self.config.get("youtube", {})
             self._youtube_service = YouTubeService(db_path, self.download_root, ffmpeg_path=self.downloader.ffmpeg_path,
-                                                   cookie_file=str(yt_cfg.get("cookie_file", "")),
-                                                   cookies_from_browser=str(yt_cfg.get("cookies_from_browser", "")),
+                                                   cookie_file=str(yt_cfg.get("cookie_file") or ""),
+                                                   cookies_from_browser=str(yt_cfg.get("cookies_from_browser") or ""),
                                                    min_duration=int(self.config.get("filter", {}).get("min_duration", 0)),
                                                    max_duration=int(self.config.get("filter", {}).get("max_duration", 0)))
         return self._youtube_service
@@ -477,8 +477,8 @@ class App:
         self.download_manager.concurrency = new_concurrency
         if self._youtube_service is not None:
             yt_cfg = config.get("youtube", {})
-            self._youtube_service.cookie_file = str(yt_cfg.get("cookie_file", ""))
-            self._youtube_service.cookies_from_browser = str(yt_cfg.get("cookies_from_browser", ""))
+            self._youtube_service.cookie_file = str(yt_cfg.get("cookie_file") or "")
+            self._youtube_service.cookies_from_browser = str(yt_cfg.get("cookies_from_browser") or "")
             self._youtube_service.ffmpeg_path = self.downloader.ffmpeg_path
 
     def _ensure_current_download_root(self) -> None:

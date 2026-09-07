@@ -126,8 +126,11 @@ class YouTubeService:
         self.save_root = normalize_download_root(save_root) / "YouTube"
         ensure_writable_root(self.save_root)
         self.ffmpeg_path = ffmpeg_path
-        self.cookie_file = cookie_file
-        self.cookies_from_browser = cookies_from_browser
+        # YAML ``null`` values can reach this service from an edited settings
+        # file.  Normalize them here so every download/auth path receives a
+        # string and never fails on ``None.strip()``.
+        self.cookie_file = str(cookie_file or "")
+        self.cookies_from_browser = str(cookies_from_browser or "")
         self.min_duration = min_duration
         self.max_duration = max_duration
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
@@ -153,7 +156,7 @@ class YouTubeService:
     def _auth_options(self) -> dict[str, Any]:
         """Return yt-dlp authentication options configured by the user."""
         options: dict[str, Any] = {}
-        browser = self.cookies_from_browser.strip().lower()
+        browser = str(self.cookies_from_browser or "").strip().lower()
         if browser:
             if browser not in {"chrome", "edge", "firefox", "brave", "opera", "chromium", "vivaldi"}:
                 raise ValueError("YouTube 浏览器 Cookie 仅支持 Chrome、Edge、Firefox、Brave、Opera、Chromium 或 Vivaldi")

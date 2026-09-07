@@ -31,6 +31,13 @@ class YouTubeDatabaseTests(unittest.TestCase):
             self.assertNotIn("cookiefile", options)
             service.close()
 
+    def test_none_auth_values_are_treated_as_unconfigured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = YouTubeService(Path(tmp) / "youtube.db", Path(tmp) / "downloads",
+                                     cookie_file=None, cookies_from_browser=None)
+            self.assertEqual(service._auth_options(), {})
+            service.close()
+
     def test_javascript_options_enable_ejs_solver(self):
         options = YouTubeService._javascript_options()
         self.assertIn("ejs:github", options["remote_components"])
