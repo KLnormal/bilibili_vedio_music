@@ -397,6 +397,7 @@ class App:
                 min_d, max_d, blacklist,
                 min_date=min_date, max_date=max_date,
                 allowlist_keywords=allowlist,
+                duration_enabled=options.duration_filter_enabled,
             )
             for video in self.repo.list_videos(m, options.media_type):
                 if video.download_status not in (DownloadStatus.PENDING, DownloadStatus.FILTERED):
@@ -436,6 +437,7 @@ class App:
                 min_d, max_d, blacklist,
                 min_date=min_date, max_date=max_date,
                 allowlist_keywords=allowlist,
+                duration_enabled=options.duration_filter_enabled,
             )
             for video in self.repo.list_videos(m, options.media_type):
                 decisions.append((video, engine.decide(video)))

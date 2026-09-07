@@ -31,14 +31,15 @@ class Decision:
 class DecisionEngine:
     def __init__(
         self,
-        min_duration: int,
-        max_duration: int,
+        min_duration: Optional[int],
+        max_duration: Optional[int],
         blacklist_keywords: Iterable[str] = (),
         min_date: Optional[datetime] = None,
         max_date: Optional[datetime] = None,
         allowlist_keywords: Iterable[str] = (),
+        duration_enabled: bool = True,
     ):
-        self._duration = DurationFilter(min_duration, max_duration)
+        self._duration = DurationFilter(min_duration, max_duration) if duration_enabled else None
         self._blacklist = list(blacklist_keywords)
         self._min_date = min_date
         self._max_date = max_date
@@ -63,10 +64,11 @@ class DecisionEngine:
             return Decision("DOWNLOADING", checks=checks)
 
         # PENDING / FILTERED -> (re-)evaluate duration -> date -> blacklist.
-        duration_ok = self._duration.is_eligible(video.duration)
-        checks["duration"] = duration_ok
-        if not duration_ok:
-            return Decision("FILTERED", reason="duration_out_of_range", checks=checks)
+        if self._duration is not None:
+            duration_ok = self._duration.is_eligible(video.duration)
+            checks["duration"] = duration_ok
+            if not duration_ok:
+                return Decision("FILTERED", reason="duration_out_of_range", checks=checks)
 
         if self._min_date is not None or self._max_date is not None:
             created = video.created

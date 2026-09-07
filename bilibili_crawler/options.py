@@ -58,6 +58,7 @@ class DownloadOptions:
     min_date: Optional[str] = None      # "20xx.xx.xx" or "0" = unlimited
     max_date: Optional[str] = None      # "20xx.xx.xx" or "0" = unlimited
     date_override: bool = False         # ignore per-UP date rules for this task
+    duration_filter_enabled: bool = True # apply min/max duration for this task
 
     @property
     def qn(self) -> Optional[int]:
@@ -85,15 +86,16 @@ class DownloadOptions:
             raise ValueError(
                 f"quality must be one of {list(QUALITY_TO_QN)}, got {self.quality!r}"
             )
-        if (
-            self.min_duration is not None
-            and self.max_duration is not None
-            and self.min_duration > self.max_duration
-        ):
-            raise ValueError("min_duration must not exceed max_duration")
-        for name, value in (("min_duration", self.min_duration), ("max_duration", self.max_duration)):
-            if value is not None and value < 0:
-                raise ValueError(f"{name} must be >= 0")
+        if self.duration_filter_enabled:
+            if (
+                self.min_duration is not None
+                and self.max_duration is not None
+                and self.min_duration > self.max_duration
+            ):
+                raise ValueError("min_duration must not exceed max_duration")
+            for name, value in (("min_duration", self.min_duration), ("max_duration", self.max_duration)):
+                if value is not None and value < 0:
+                    raise ValueError(f"{name} must be >= 0")
         # 校验日期格式（"0" 视为不限）
         self.min_datetime
         self.max_datetime

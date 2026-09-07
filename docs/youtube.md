@@ -24,6 +24,8 @@ Edge/Chrome 可能使用 v20 App-Bound Encryption；当前 yt-dlp 无法直接�
 桌面下载会显示当前视频和 yt-dlp 的实时字节进度，并对网络请求设置有限超时与重试次数。
 YouTube 当前要求 JavaScript challenge 求解；程序会自动检测系统 Node.js，并启用
 yt-dlp 的 EJS（`ejs:github`）组件，否则可能出现“页面需要重新加载”且没有可用格式。
+桌面下载页的时长范围为 0–14400 秒（最多 4 小时）；取消“启用时长筛选”后，
+本次 YouTube 预览和下载不会按时长排除视频。
 如果程序在下载中异常退出，下一次开始下载会自动把遗留的 `DOWNLOADING` 记录恢复为
 `PENDING`，避免队列永久卡住。
 开始新下载时还会先检查 `DOWNLOADED` 记录对应的文件是否仍存在；文件被移动或删除时

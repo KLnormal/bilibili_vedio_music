@@ -147,6 +147,18 @@ class YouTubeDatabaseTests(unittest.TestCase):
             self.assertTrue(service.list_videos("UCdemo", "audio")[0].download_path.endswith(".m4a"))
             service.close()
 
+    def test_preview_ignores_duration_when_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = YouTubeService(root / "youtube.db", root / "downloads", min_duration=300, max_duration=1800)
+            service.db.execute("INSERT INTO channel(channel_id,name,url) VALUES('UCdemo','Demo','https://example.invalid')")
+            service.db.execute("INSERT INTO video(video_id,channel_id,title,duration,url) VALUES('abcdefghijk','UCdemo','four hours',14400,'https://youtu.be/abcdefghijk')")
+            service.db.execute("INSERT INTO media(video_id,media_type) VALUES('abcdefghijk','video')")
+            service.db.commit()
+            result = service.preview("UCdemo", "video", DownloadOptions(duration_filter_enabled=False))
+            self.assertEqual(result["stats"].get("READY"), 1)
+            service.close()
+
     def test_scan_without_channel_scans_enabled_channels(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

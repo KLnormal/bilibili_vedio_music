@@ -65,6 +65,7 @@ UP 主管理、投稿扫描（全量/增量）、BV 去重、元数据保存、�
 
 - `video_media` 为每个 BV 的 video/audio 独立状态；MP4 已下载不会阻止同 BV 的 M4A 进入队列。
 - 任务页时长/日期始终可编辑，预览和下载共享同一份实时参数；黑名单优先于指定下载名单。
+- 下载页时长上限扩展到 14400 秒（4 小时），并可用“启用时长筛选”勾选框关闭本次时长过滤。
 - 扫描分页、下载流和 ffmpeg 均支持停止；Windows ffmpeg 使用 `CREATE_NO_WINDOW`，停止会清理 `.part` 并恢复 PENDING。
 - 离线回归测试命令：`$env:QT_QPA_PLATFORM='offscreen'; .\\.venv\\Scripts\\python.exe -m unittest discover -s tests -p "test*.py"`。
 - 花譜在线冒烟（临时库，不改现有数据）：`$env:RUN_BILIBILI_LIVE='1'; .\\.venv\\Scripts\\python.exe -m unittest discover -s tests -p "test_live*.py"`。

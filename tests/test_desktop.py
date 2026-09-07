@@ -70,6 +70,19 @@ class DesktopControlsTest(unittest.TestCase):
         self.assertTrue(options.date_filter_active)
         self.assertEqual((options.quality, options.media_type), ("1080p+", "audio"))
 
+    def test_duration_filter_can_be_disabled_and_supports_four_hours(self):
+        tasks = self.window.tasks
+        self.assertEqual(tasks.max_duration.maximum(), 14400)
+        tasks.max_duration.setValue(14400)
+        tasks.duration_override.setChecked(False)
+        options = tasks.options()
+        self.assertFalse(options.duration_filter_enabled)
+        self.assertIsNone(options.min_duration)
+        self.assertIsNone(options.max_duration)
+        self.assertTrue(tasks.max_duration.isEnabled() is False)
+        tasks.duration_override.setChecked(True)
+        self.assertTrue(tasks.max_duration.isEnabled())
+
     def test_navigation_and_filter_controls_accept_mouse_clicks(self):
         nav = next(button for button in self.window.findChildren(QPushButton)
                    if button.text() == "任务与视频")

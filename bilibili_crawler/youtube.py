@@ -369,8 +369,9 @@ class YouTubeService:
             max_d = (getattr(options, "max_duration", None) if options else None)
             if min_d is None: min_d = self.min_duration
             if max_d is None: max_d = self.max_duration
-            if min_d and (v.duration is None or v.duration < min_d): reason = "duration_out_of_range"
-            elif max_d and (v.duration is None or v.duration > max_d): reason = "duration_out_of_range"
+            if getattr(options, "duration_filter_enabled", True):
+                if min_d and (v.duration is None or v.duration < min_d): reason = "duration_out_of_range"
+                elif max_d and (v.duration is None or v.duration > max_d): reason = "duration_out_of_range"
             elif options and getattr(options, "min_datetime", None) and (v.created is None or datetime.fromtimestamp(v.created) < options.min_datetime): reason = "date_out_of_range"
             elif options and getattr(options, "max_datetime", None) and (v.created is None or datetime.fromtimestamp(v.created) > options.max_datetime): reason = "date_out_of_range"
             elif allow and not any(k.casefold() in v.title.casefold() for k in allow): reason = "allowlist_miss"

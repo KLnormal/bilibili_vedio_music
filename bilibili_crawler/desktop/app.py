@@ -259,8 +259,8 @@ class UpRulesDialog(QDialog):
         root = QVBoxLayout(self)
         form = QFormLayout()
         settings = controller.get_up_filter_settings(mid)
-        self.min_duration = QSpinBox(); self.min_duration.setRange(0, 86400)
-        self.max_duration = QSpinBox(); self.max_duration.setRange(0, 86400)
+        self.min_duration = QSpinBox(); self.min_duration.setRange(0, 14400)
+        self.max_duration = QSpinBox(); self.max_duration.setRange(0, 14400)
         self.min_duration.setSpecialValueText("继承全局")
         self.max_duration.setSpecialValueText("继承全局")
         self.min_duration.setValue(settings.min_duration or 0)
@@ -550,13 +550,15 @@ class TasksPage(QWidget):
         filter_layout.setHorizontalSpacing(10)
         filter_layout.setVerticalSpacing(10)
         self.filter_box.setMinimumHeight(122)
-        self.duration_override = QLabel("时长筛选")
-        self.duration_override.setToolTip("当前输入的时长范围会直接应用于本次预览/下载")
+        self.duration_override = QCheckBox("启用时长筛选")
+        self.duration_override.setChecked(True)
+        self.duration_override.setToolTip("勾选后，本次预览/下载仅处理指定时长范围内的视频")
+        self.duration_override.toggled.connect(self._toggle_duration_filter)
         self.duration_override.setMinimumWidth(116)
-        self.min_duration = QSpinBox(); self.min_duration.setRange(0, 86400); self.min_duration.setValue(0)
+        self.min_duration = QSpinBox(); self.min_duration.setRange(0, 14400); self.min_duration.setValue(0)
         self.min_duration.setSuffix(" 秒"); self.min_duration.setSpecialValueText("不限")
         self.min_duration.setMinimumWidth(170)
-        self.max_duration = QSpinBox(); self.max_duration.setRange(0, 86400); self.max_duration.setValue(86400)
+        self.max_duration = QSpinBox(); self.max_duration.setRange(0, 14400); self.max_duration.setValue(14400)
         self.max_duration.setSuffix(" 秒")
         self.max_duration.setMinimumWidth(170)
         self.date_override = QLabel("发布时间筛选")
@@ -810,8 +812,8 @@ class TasksPage(QWidget):
         # Keep the editors interactive so users can prepare values before
         # enabling the override checkbox.  The checkbox still controls
         # whether those values are included in DownloadOptions.
-        self.min_duration.setEnabled(True)
-        self.max_duration.setEnabled(True)
+        self.min_duration.setEnabled(enabled)
+        self.max_duration.setEnabled(enabled)
 
     def _toggle_date_filter(self, enabled: bool):
         self.min_date.setEnabled(True)
@@ -901,11 +903,12 @@ class TasksPage(QWidget):
         options = DownloadOptions(
             quality=None if quality == "默认" else quality,
             media_type=self.media.currentText(),
-            min_duration=self.min_duration.value(),
-            max_duration=self.max_duration.value(),
+            min_duration=self.min_duration.value() if self.duration_override.isChecked() else None,
+            max_duration=self.max_duration.value() if self.duration_override.isChecked() else None,
             min_date=self.min_date.text().strip() or "0",
             max_date=self.max_date.text().strip() or "0",
             date_override=True,
+            duration_filter_enabled=self.duration_override.isChecked(),
         )
         try:
             options.validate()

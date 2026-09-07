@@ -432,6 +432,27 @@ class DownloadOptionsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             DownloadOptions(min_duration=500, max_duration=300).validate()
 
+    def test_duration_filter_can_be_disabled(self):
+        options = DownloadOptions(min_duration=500, max_duration=300, duration_filter_enabled=False)
+        options.validate()
+
+    def test_preview_ignores_duration_when_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cfg = root / "config.yaml"
+            cfg.write_text(yaml.safe_dump({
+                "database": {"path": str(root / "state.db")},
+                "auth": {"cookie_file": str(root / "cookies.json")},
+                "download": {"save_root": str(root / "downloads")},
+                "filter": {"min_duration": 300, "max_duration": 1800},
+            }), encoding="utf-8")
+            app = App(cfg, configure_logging=False)
+            app.repo.upsert_up(Up(mid=1, name="test"))
+            app.repo.insert_video(Video(bvid="BVfourhours", mid=1, title="long", duration=14400))
+            result = app.preview(1, DownloadOptions(duration_filter_enabled=False))
+            self.assertEqual(result["stats"].get("READY"), 1)
+            app.close()
+
     def test_parse_date_unlimited(self):
         self.assertIsNone(parse_date(None))
         self.assertIsNone(parse_date("0"))
