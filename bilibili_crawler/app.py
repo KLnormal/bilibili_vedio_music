@@ -20,7 +20,7 @@ from .config.configuration import load_config, resolve_cookie_path, resolve_data
 from .crawler.scheduler import Scheduler
 from .crawler.user_crawler import CrawlStats, UserCrawler
 from .database.database import Database
-from .database.models import DownloadStatus, Up, UpFilterSettings
+from .database.models import DownloadStatus, Up, UpFilterSettings, Video
 from .database.repository import Repository
 from .download_directory import (
     build_media_file_index,
@@ -306,10 +306,10 @@ class App:
             try:
                 detail = get_video_detail(self.client, bvid)
                 up = self.repo.get_up(detail.mid) if detail.mid else None
-                if detail.mid:
-                    up_dir = (up.name if up and up.name else str(detail.mid))
-                else:
-                    up_dir = "direct"
+                # Explicit video downloads are intentionally kept separate
+                # from normal UP queues so they are easy to find and never
+                # mix with rule-driven downloads.
+                up_dir = "Direct"
                 path = self.downloader.download(
                     detail, up_dir, self.limiter,
                     media_type=options.media_type, qn=options.qn,
@@ -323,6 +323,18 @@ class App:
             except Exception as exc:  # noqa: BLE001
                 results.append((bvid, False, str(exc)))
         return results
+
+    def preview_bv(self, bvids: List[str], options: Optional[DownloadOptions] = None) -> dict:
+        """Preview explicitly requested BVs, bypassing every filter rule."""
+        options = options or DownloadOptions()
+        options.validate()
+        decisions = []
+        for bvid in bvids:
+            detail = get_video_detail(self.client, bvid)
+            video = Video(bvid=bvid, mid=detail.mid or 0, title=detail.title,
+                          duration=detail.duration, created=detail.pubdate)
+            decisions.append((video, "READY", ""))
+        return {"stats": {"READY": len(decisions)}, "decisions": decisions, "direct": True}
 
     def add_blacklist(self, mid: int, keyword: str) -> bool:
         ok = self.repo.add_blacklist(mid, keyword)

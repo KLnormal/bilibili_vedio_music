@@ -166,6 +166,41 @@ class YouTubeDatabaseTests(unittest.TestCase):
             self.assertEqual(result["stats"].get("READY"), 1)
             service.close()
 
+    def test_direct_preview_ignores_channel_filters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = YouTubeService(root / "youtube.db", root / "downloads", min_duration=300, max_duration=600)
+            fake = mock.Mock()
+            fake.YoutubeDL.return_value.extract_info.return_value = {
+                "id": "abcdefghijk", "title": "two hour video", "duration": 7200,
+                "channel_id": "UCdemo",
+            }
+            with mock.patch.object(service, "_ydl", return_value=fake):
+                result = service.preview_direct("https://youtu.be/abcdefghijk", "video", DownloadOptions())
+            self.assertEqual(result["stats"], {"READY": 1})
+            self.assertTrue(result["direct"])
+            service.close()
+
+    def test_direct_download_uses_separate_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = YouTubeService(root / "youtube.db", root / "downloads")
+
+            class FakeYoutubeDL:
+                def __init__(self, options):
+                    self.options = options
+                def extract_info(self, _url, download=False):
+                    return {"id": "abcdefghijk", "title": "direct"}
+                def download(self, _urls):
+                    out = self.options["outtmpl"].replace("%(title)s", "direct").replace("%(id)s", "abcdefghijk").replace("%(ext)s", "m4a")
+                    Path(out).write_bytes(b"audio")
+
+            with mock.patch.object(service, "_ydl", return_value=mock.Mock(YoutubeDL=FakeYoutubeDL)):
+                result = service.download_direct("abcdefghijk", options=DownloadOptions(media_type="audio"))
+            self.assertEqual(result["downloaded"], 1)
+            self.assertTrue(Path(result["path"]).is_relative_to(root / "downloads" / "YouTube" / "Direct"))
+            service.close()
+
     def test_scan_without_channel_scans_enabled_channels(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

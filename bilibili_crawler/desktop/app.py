@@ -650,6 +650,17 @@ class TasksPage(QWidget):
         self._load_allowlist_enabled()
         root.addWidget(self.filter_box)
 
+        direct_box = QGroupBox("单个视频直下（忽略全部筛选）")
+        direct_layout = QHBoxLayout(direct_box)
+        self.direct_video = QLineEdit()
+        self.direct_video.setPlaceholderText("输入一个 YouTube 视频 URL/ID 或 Bilibili BV 号")
+        direct_layout.addWidget(self.direct_video, 1)
+        self.direct_preview_button = _button("直下预览", self.direct_preview)
+        self.direct_download_button = _button("直接下载", self.direct_download, True)
+        direct_layout.addWidget(self.direct_preview_button)
+        direct_layout.addWidget(self.direct_download_button)
+        root.addWidget(direct_box)
+
         buttons = QHBoxLayout()
         buttons.setContentsMargins(0, 2, 0, 2)
         buttons.setSpacing(8)
@@ -787,6 +798,10 @@ class TasksPage(QWidget):
             self.task_status.setText("下载任务已完成")
             self.task_progress.setRange(0, 100)
             self.task_progress.setValue(100)
+        elif name == "preview" and isinstance(result, dict):
+            stats = result.get("stats", {})
+            if result.get("direct"):
+                self.task_status.setText(f"直下预览：READY {stats.get('READY', 0)}")
         elif name == "scan":
             self.scan_status.setText("扫描任务已完成")
             self.scan_progress.setRange(0, 100)
@@ -927,6 +942,34 @@ class TasksPage(QWidget):
             return
         if not self.controller.start_preview(self.mid_value(), options):
             QMessageBox.information(self, "任务提示", "预览任务已经在运行中")
+
+    def direct_preview(self):
+        value = self.direct_video.text().strip()
+        if not value:
+            QMessageBox.warning(self, "缺少视频", "请输入一个视频 URL、视频 ID 或 BV 号")
+            return
+        options = self._direct_options()
+        if not self.controller.start_direct_preview(value, options):
+            QMessageBox.information(self, "任务提示", "预览任务已经在运行中")
+
+    def direct_download(self):
+        value = self.direct_video.text().strip()
+        if not value:
+            QMessageBox.warning(self, "缺少视频", "请输入一个视频 URL、视频 ID 或 BV 号")
+            return
+        options = self._direct_options()
+        if not self.controller.start_direct_download(value, options):
+            QMessageBox.warning(self, "无法开始下载", "下载任务已经在运行中，或应用正在退出")
+
+    def _direct_options(self) -> DownloadOptions:
+        """Build direct-download options without validating filter widgets."""
+        quality = self.quality.currentText()
+        return DownloadOptions(
+            quality=None if quality == "默认" else quality,
+            media_type=self.media.currentText(),
+            min_date="0", max_date="0", date_override=True,
+            duration_filter_enabled=False,
+        )
 
     def download(self):
         options = self.options()

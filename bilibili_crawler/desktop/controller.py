@@ -317,6 +317,29 @@ class DesktopController(QObject):
 
         return self._start("download", work, mid)
 
+    def start_direct_preview(self, identifier: str, options: DownloadOptions) -> bool:
+        """Preview one explicitly requested video as READY 1, bypassing rules."""
+        value = str(identifier or "").strip()
+        if self.source == "youtube":
+            return self._start("preview", lambda cancel, worker: self.app.youtube().preview_direct(value, options.media_type, options), value)
+        return self._start("preview", lambda cancel, worker: self.app.preview_bv([value], options), value)
+
+    def start_direct_download(self, identifier: str, options: DownloadOptions) -> bool:
+        """Download one explicitly requested video into the Direct folder."""
+        value = str(identifier or "").strip()
+        if self.source == "youtube":
+            def work(cancel: threading.Event, worker: TaskWorker):
+                def on_progress(payload: dict) -> None:
+                    self.app.state.set_progress(**payload); worker.progress.emit(payload)
+                try:
+                    return self.app.youtube().download_direct(value, options.media_type,
+                                                              quality=options.quality, options=options,
+                                                              stop_event=cancel, progress_callback=on_progress)
+                finally:
+                    self.app.state.clear_progress()
+            return self._start("download", work, value)
+        return self._start("download", lambda cancel, worker: self.app.download_bv([value], options), value)
+
     def start_login(self) -> bool:
         def work(cancel: threading.Event, worker: TaskWorker):
             url, key, matrix = self.app.login.request_qrcode()

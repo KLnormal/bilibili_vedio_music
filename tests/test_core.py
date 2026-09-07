@@ -549,6 +549,16 @@ class CheckFilesTest(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertTrue(results[0][1])  # success (not filtered by blacklist)
 
+    def test_direct_bv_preview_is_ready_one_and_uses_direct_folder(self):
+        detail = VideoDetail(bvid="BV1a", title="TESTDATAABC", duration=7200, cid=1, mid=1)
+        with mock.patch("bilibili_crawler.app.get_video_detail", return_value=detail):
+            result = self.app.preview_bv(["BV1a"], DownloadOptions())
+        self.assertEqual(result["stats"], {"READY": 1})
+        with mock.patch("bilibili_crawler.app.get_video_detail", return_value=detail), \
+             mock.patch.object(self.app.downloader, "download", return_value=Path("/tmp/x.mp4")) as download:
+            self.app.download_bv(["BV1a"], DownloadOptions())
+        self.assertEqual(download.call_args.args[1], "Direct")
+
 
 if __name__ == "__main__":
     unittest.main()

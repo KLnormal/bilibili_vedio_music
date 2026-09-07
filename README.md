@@ -91,6 +91,9 @@ python main.py desktop
 独立的 `youtube.db`；已下载文件位于 `downloads\YouTube`，不会混入 Bilibili 记录。
 “UP 管理”页的下载按钮使用设置页中的默认清晰度和媒体类型；“任务与视频”页仍可为
 单次任务覆盖。音频任务始终生成 `.m4a`，1080P 只对视频任务有意义。
+任务页的“单个视频直下”可输入一个 YouTube 视频 URL/ID 或 Bilibili BV 号，直下预览固定显示
+`READY 1`，并忽略时长、日期、黑名单和指定名单；这类文件统一保存到下载根目录的 `Direct`
+（YouTube 为 `YouTube\Direct`）文件夹。
 YouTube 下载过程中任务页会显示当前视频和实时进度；网络失败会在有限次数后标记失败，
 程序会自动启用系统 Node.js 与 yt-dlp EJS challenge solver，避免 YouTube 返回“页面需要重新加载”；
 不会无限停留在“正在准备队列”。

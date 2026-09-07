@@ -384,6 +384,87 @@ class YouTubeService:
         from collections import Counter
         return {"stats": dict(Counter(d for _, d, _ in result)), "decisions": result}
 
+    @staticmethod
+    def _direct_url(identifier: str) -> str:
+        raw = str(identifier or "").strip()
+        if VIDEO_ID_RE.fullmatch(raw):
+            return f"https://www.youtube.com/watch?v={raw}"
+        parsed = urlparse(raw if "://" in raw else "https://" + raw)
+        host = parsed.netloc.lower().split(":", 1)[0]
+        if host == "youtu.be":
+            video_id = parsed.path.strip("/").split("/", 1)[0]
+        elif host in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+            if parsed.path.rstrip("/").lower() == "/watch":
+                from urllib.parse import parse_qs
+                video_id = (parse_qs(parsed.query).get("v") or [""])[0]
+            else:
+                parts = [p for p in parsed.path.split("/") if p]
+                video_id = parts[1] if len(parts) >= 2 and parts[0].lower() in {"shorts", "embed", "live"} else ""
+        else:
+            video_id = ""
+        if not VIDEO_ID_RE.fullmatch(video_id):
+            raise ValueError("请输入有效的 YouTube 视频 ID 或视频 URL")
+        return f"https://www.youtube.com/watch?v={video_id}"
+
+    def preview_direct(self, identifier: str, media_type: str = "video", options=None) -> dict:
+        """Resolve one explicit video and report READY 1 without filters."""
+        if options is not None:
+            options.validate()
+            media_type = options.media_type
+        url = self._direct_url(identifier)
+        ydl_opts = {"quiet": True, "skip_download": True, "noplaylist": True}
+        ydl_opts.update(self._javascript_options()); ydl_opts.update(self._auth_options())
+        info = self._ydl().YoutubeDL(ydl_opts).extract_info(url, download=False)
+        video_id = str(info.get("id") or url.rsplit("v=", 1)[-1])
+        video = YouTubeVideo(video_id, str(info.get("channel_id") or "direct"),
+                             info.get("title") or video_id, duration=info.get("duration"),
+                             url=url, media_type=media_type)
+        return {"stats": {"READY": 1}, "decisions": [(video, "READY", "")], "direct": True}
+
+    def download_direct(self, identifier: str, media_type: str = "video", *, quality: Optional[str] = None,
+                        options=None, stop_event: Optional[threading.Event] = None,
+                        progress_callback: Optional[Callable[[dict[str, Any]], None]] = None) -> dict:
+        """Download one explicit video into ``YouTube/Direct``.
+
+        This path deliberately does not consult channel membership, duration,
+        date, blacklist, allowlist, or database media state.
+        """
+        if options is not None:
+            options.validate(); media_type = options.media_type; quality = quality or options.quality
+        url = self._direct_url(identifier)
+        extract_opts = {"quiet": True, "skip_download": True, "noplaylist": True}
+        extract_opts.update(self._javascript_options()); extract_opts.update(self._auth_options())
+        info = self._ydl().YoutubeDL(extract_opts).extract_info(url, download=False)
+        video_id = str(info.get("id") or url.rsplit("v=", 1)[-1]); title = info.get("title") or video_id
+        folder = self.save_root / "Direct"; folder.mkdir(parents=True, exist_ok=True)
+        height = {"720p": 720, "1080p": 1080, "1080p+": 1080, "1080p60": 1080, "4k": 2160}.get((quality or "").lower())
+        fmt = (f"bestvideo[height={height}]+bestaudio/best[height={height}]" if height and media_type == "video" else "bestvideo+bestaudio/best" if media_type == "video" else "bestaudio[ext=m4a]/bestaudio")
+        opts = {"quiet": True, "no_warnings": True, "format": fmt,
+                "outtmpl": str(folder / "%(title)s [%(id)s].%(ext)s"), "noplaylist": True,
+                "merge_output_format": "mp4" if media_type == "video" else "m4a",
+                "ffmpeg_location": self.ffmpeg_path or None, "socket_timeout": 30,
+                "retries": 2, "fragment_retries": 2, "extractor_retries": 2}
+        opts.update(self._javascript_options()); opts.update(self._auth_options())
+        def emit(payload):
+            if progress_callback:
+                try: progress_callback(payload)
+                except Exception: pass
+        emit({"bvid": video_id, "title": f"[1/1] {title}", "downloaded": 0, "total": -1, "speed": "", "status": "starting"})
+        def hook(status):
+            if stop_event and stop_event.is_set(): raise RuntimeError("下载已停止")
+            if status.get("status") not in {"downloading", "finished"}: return
+            downloaded = int(status.get("downloaded_bytes") or 0); total = int(status.get("total_bytes") or status.get("total_bytes_estimate") or -1)
+            speed_value = status.get("speed"); speed = f"{speed_value / 1024 / 1024:.2f} MB/s" if speed_value else ""
+            emit({"bvid": video_id, "title": f"[1/1] {title}", "downloaded": downloaded, "total": total, "speed": speed, "status": status.get("status")})
+        opts["progress_hooks"] = [hook]
+        try:
+            self._ydl().YoutubeDL({k: v for k, v in opts.items() if v is not None}).download([url])
+            path = next((p for p in folder.glob("*") if f"[{video_id}]" in p.name and p.suffix.lower() in {".mp4", ".m4a", ".webm"} and p.stat().st_size > 0), None)
+            if not path: raise RuntimeError("yt-dlp 未生成有效文件")
+            return {"downloaded": 1, "failed": 0, "path": str(path), "stats": {"READY": 1}}
+        except Exception as exc:
+            return {"downloaded": 0, "failed": 1, "error": str(exc), "stats": {"READY": 1}}
+
     def download(self, channel_id: Optional[str] = None, media_type: str = "video", *, quality: Optional[str] = None, options=None, stop_event: Optional[threading.Event] = None, progress_callback: Optional[Callable[[dict[str, Any]], None]] = None) -> dict:
         if options is not None:
             options.validate()
